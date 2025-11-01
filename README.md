@@ -20,11 +20,11 @@ Lightweight event tracking for Apple platforms with per-session and optional use
   - `events.jsonl` — one JSON event per line
 
 ## Installation (Swift Package Manager)
-- In Xcode: File → Add Packages… → enter your repository URL (e.g., https://github.com/<your-org>/CXHero) → Add.
+- In Xcode: File → Add Packages… → enter your repository URL `https://github.com/indigothm/cxhero-ios` → Add.
 - Or in `Package.swift` dependencies:
 ```
 dependencies: [
-    .package(url: "https://github.com/<your-org>/CXHero", from: "0.1.0")
+    .package(url: "https://github.com/indigothm/cxhero-ios", from: "0.1.0")
 ]
 ```
 
