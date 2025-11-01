@@ -1,0 +1,59 @@
+SPDX-License-Identifier: LicenseRef-CXHero-NCL-1.0
+
+CXHero Non‑Commercial License (NCL) v1.0
+
+Copyright (c) 2025 The CXHero Authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the “Software”), to use,
+reproduce, and modify the Software for Non‑Commercial purposes, and to
+redistribute the Software (in source or compiled form), subject to the
+following conditions:
+
+1) Non‑Commercial Use Only
+   “Non‑Commercial” means any use that is not primarily intended for or
+   directed toward commercial advantage or monetary compensation. Examples of
+   Non‑Commercial use include personal projects, academic research and
+   teaching, open‑source projects under compatible terms, and evaluation.
+
+   The following are NOT Non‑Commercial uses and require a separate commercial
+   license: use by or for a for‑profit entity in production; any use that
+   generates revenue (including ad‑supported services), supports internal
+   business operations, or is bundled or resold as part of a commercial
+   product or service.
+
+2) Redistribution
+   Any redistribution must include this license text and the above copyright
+   notice. Modifications must be clearly marked as changes from the original.
+
+3) No Trademark License
+   This license does not grant permission to use the trade names, trademarks,
+   service marks, or product names of the CXHero Authors, except as required
+   for reasonable and customary use in describing the origin of the Software.
+
+4) No Patent License
+   No express or implied patent rights are granted under this license.
+
+5) Disclaimer of Warranty
+   THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+   DEALINGS IN THE SOFTWARE.
+
+6) Limitation of Liability
+   TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT WILL THE
+   AUTHORS BE LIABLE FOR ANY INDIRECT, SPECIAL, INCIDENTAL, CONSEQUENTIAL, OR
+   EXEMPLARY DAMAGES, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+7) Termination
+   Any breach of these terms automatically terminates the rights granted by
+   this license. Rights may be reinstated solely at the discretion of the
+   CXHero Authors upon cure of the breach.
+
+Commercial Licensing
+   Commercial use is available on a case‑by‑case basis. To inquire about a
+   commercial license, please contact the maintainers through the repository’s
+   issue tracker or your preferred channel with the project owners.
