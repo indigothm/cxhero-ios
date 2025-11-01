@@ -237,3 +237,8 @@ let events = await EventRecorder.shared.events(forSessionID: userSessions.first!
 ## License
 - Non‑Commercial License (NCL) v1.0. See `LICENSE` for details.
 - Commercial licensing is available on a case‑by‑case basis. Open an issue to inquire.
+
+## Contributing
+- We use the Developer Certificate of Origin (DCO). Please sign your commits with `-s`.
+- By contributing, you agree to the inbound=outbound terms (your contribution is licensed under the repo’s NCL) and grant the maintainers a non‑exclusive, royalty‑free license to relicense your contribution as part of CXHero’s commercial licenses.
+- See `CONTRIBUTING.md` for details.
