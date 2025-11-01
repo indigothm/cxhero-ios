@@ -9,9 +9,10 @@ Lightweight event tracking for Apple platforms with per-session and optional use
 - Primitive properties with type-safe encoding
 - Async-safe writes via actors
 - SwiftUI micro-survey trigger view driven by JSON config
- - Once-per-user gating and cooldowns
- - Richer trigger operators (eq, ne, gt, gte, lt, lte, contains, notContains, exists)
- - Remote config loading with auto-refresh
+- Supports button-choice or free-text feedback surveys
+- Once-per-user gating and cooldowns
+- Rich trigger operators (eq, ne, gt, gte, lt, lte, contains, notContains, exists)
+- Remote config loading with auto-refresh
 
 ## Storage Layout
 - Base directory: `Documents/CXHero` (override via `EventRecorder(directory:)`)
@@ -62,15 +63,19 @@ await EventRecorder.shared.clear()
 ## SwiftUI Micro Survey
 - Define a JSON config that describes survey rules and triggers.
 
-### Example config JSON
+### Example config JSON (choices + text feedback)
 ```
 {
+  "$schema": "./survey.schema.json",
   "surveys": [
     {
       "id": "ask_rating",
       "title": "Quick question",
       "message": "How would you rate your experience?",
-      "options": ["Great", "Okay", "Poor"],
+      "response": {
+        "type": "options",
+        "options": ["Great", "Okay", "Poor"]
+      },
       "oncePerSession": true,
       "oncePerUser": false,
       "cooldownSeconds": 86400,
@@ -81,6 +86,26 @@ await EventRecorder.shared.clear()
             "amount": { "op": "gt", "value": 50 },
             "coupon": { "op": "exists" },
             "utm": { "op": "contains", "value": "spring" }
+          }
+        }
+      }
+    },
+    {
+      "id": "open_feedback",
+      "title": "We'd love your feedback",
+      "message": "Tell us what worked well or what could improve.",
+      "response": {
+        "type": "text",
+        "placeholder": "Share your thoughts…",
+        "submitLabel": "Send feedback",
+        "minLength": 5,
+        "maxLength": 500
+      },
+      "trigger": {
+        "event": {
+          "name": "checkout_success",
+          "properties": {
+            "amount": { "op": "gt", "value": 100 }
           }
         }
       }
@@ -137,15 +162,27 @@ var body: some View {
 | `id`             | `String`                                | Yes      | —       | Stable identifier for the survey rule. Used by gating and analytics. |
 | `title`          | `String`                                | Yes      | —       | Title shown in the survey sheet. |
 | `message`        | `String`                                | Yes      | —       | Message/body shown in the survey sheet. |
-| `options`        | `[String]`                              | Yes      | —       | List of button options to present. |
+| `options`        | `[String]`                              | No       | —       | Legacy list of button options. If present, automatically converted to `response.type = "options"`. |
+| `response`       | `SurveyResponse`                        | No*      | —       | Response configuration (choices or text). Recommended for all new configs. |
 | `trigger`        | `TriggerCondition`                      | Yes      | —       | When to show the survey (see TriggerCondition). |
 | `oncePerSession` | `Bool`                                  | No       | `true`  | If `true`, the rule is shown at most once per current event session. |
 | `oncePerUser`    | `Bool`                                  | No       | `false` | If `true`, the rule is never shown again for the same `userId` across sessions. Requires a `userID` when starting sessions; otherwise counts under `anon`. |
 | `cooldownSeconds`| `Number` (seconds)                      | No       | —       | Minimum time between presentations for the same `userId`. Ignored if `oncePerUser` is `true` and the rule has already been shown. |
 
 Notes
+- At least one of `options` or `response` must be provided. If both appear, `response` wins.
 - If both `oncePerUser` and `cooldownSeconds` are provided and the rule was already shown for the user, `oncePerUser` takes precedence and blocks future prompts permanently for that user.
 - Session scoping uses `EventRecorder.startSession(userID:metadata:)` to set `userID`. If omitted, the user is recorded as `anon`.
+
+### SurveyResponse
+| Type (`response.type`) | Fields | Description |
+|------------------------|--------|-------------|
+| `"options"`           | `options: [String]` | Presents buttons for each option value. Selecting an option immediately submits. |
+| `"text"`              | `placeholder?: String`, `submitLabel?: String`, `allowEmpty?: Bool (default false)`, `minLength?: Int`, `maxLength?: Int` | Renders a multiline text editor with validation. Text is trimmed before submission. |
+
+Notes
+- `minLength`/`maxLength` apply after trimming whitespace.
+- `allowEmpty: true` permits submitting empty text (still trimmed). Consider the privacy implications of collecting free-form text.
 
 ### TriggerCondition
 Currently supported: `event`.
@@ -190,9 +227,11 @@ Examples
 ```
 
 ### Events emitted by the survey
-- `survey_presented` with `{ id }`
-- `survey_response` with `{ id, option }`
-- `survey_dismissed` with `{ id }` (recorded once per presentation; not duplicated on button presses)
+- `survey_presented` with `{ id, responseType }`
+- `survey_response`
+  - Choice surveys: `{ id, type: "choice", option }`
+  - Text surveys: `{ id, type: "text", text }` (trimmed)
+- `survey_dismissed` with `{ id, responseType }` (recorded once per presentation; not duplicated on button presses)
 
 ### JSON Schema and Validation
 - The repository includes `survey.schema.json` describing the full configuration.
@@ -215,7 +254,8 @@ npx ajv-cli validate -s survey.schema.json -d survey.json
 ## Behavior
 - Observes `EventRecorder.shared.eventsPublisher`.
 - When an event matches a rule’s trigger, presents a dismissible sheet.
-- On selection, records `survey_response` with `id` and `option`.
+- On selection, records `survey_response` with `id` and `option` (choices).
+- On text submission, records `survey_response` with `id` and trimmed `text`.
 - On dismiss, records `survey_dismissed` with `id`.
 - `oncePerSession` prevents repeated prompts within a session (default true).
 - `oncePerUser` prevents the same survey across sessions for that user.
@@ -225,6 +265,7 @@ npx ajv-cli validate -s survey.schema.json -d survey.json
 - Events include `sessionId`, `userId`, `timestamp`, and optional typed `properties`.
 - If you call `record(...)` without starting a session, an anonymous session is created automatically.
 - JSON timestamps use ISO-8601 for portability.
+- Text responses are trimmed before logging. Consider downstream storage/retention for free-form content and scrub PII as needed.
 
 ## Analytics Helpers
 - List sessions and fetch per-session events for analysis.

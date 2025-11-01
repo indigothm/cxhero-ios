@@ -9,13 +9,120 @@ public struct SurveyRule: Codable, Equatable, Sendable, Identifiable {
     public let ruleId: String
     public let title: String
     public let message: String
-    public let options: [String]
+    public let response: SurveyResponse
     public let trigger: TriggerCondition
     public let oncePerSession: Bool?
     public let oncePerUser: Bool?
     public let cooldownSeconds: TimeInterval?
 
-    enum CodingKeys: String, CodingKey { case ruleId = "id", title, message, options, trigger, oncePerSession, oncePerUser, cooldownSeconds }
+    public var options: [String] {
+        if case .options(let opts) = response { return opts }
+        return []
+    }
+
+    enum CodingKeys: String, CodingKey { case ruleId = "id", title, message, options, trigger, oncePerSession, oncePerUser, cooldownSeconds, response }
+
+    public init(ruleId: String, title: String, message: String, response: SurveyResponse, trigger: TriggerCondition, oncePerSession: Bool? = nil, oncePerUser: Bool? = nil, cooldownSeconds: TimeInterval? = nil) {
+        self.ruleId = ruleId
+        self.title = title
+        self.message = message
+        self.response = response
+        self.trigger = trigger
+        self.oncePerSession = oncePerSession
+        self.oncePerUser = oncePerUser
+        self.cooldownSeconds = cooldownSeconds
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.ruleId = try container.decode(String.self, forKey: .ruleId)
+        self.title = try container.decode(String.self, forKey: .title)
+        self.message = try container.decode(String.self, forKey: .message)
+        self.trigger = try container.decode(TriggerCondition.self, forKey: .trigger)
+        if let response = try container.decodeIfPresent(SurveyResponse.self, forKey: .response) {
+            self.response = response
+        } else if let options = try container.decodeIfPresent([String].self, forKey: .options) {
+            self.response = .options(options)
+        } else {
+            throw DecodingError.dataCorruptedError(forKey: .response, in: container, debugDescription: "SurveyRule requires either response or options")
+        }
+        self.oncePerSession = try container.decodeIfPresent(Bool.self, forKey: .oncePerSession)
+        self.oncePerUser = try container.decodeIfPresent(Bool.self, forKey: .oncePerUser)
+        self.cooldownSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .cooldownSeconds)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(ruleId, forKey: .ruleId)
+        try container.encode(title, forKey: .title)
+        try container.encode(message, forKey: .message)
+        try container.encode(trigger, forKey: .trigger)
+        try container.encode(response, forKey: .response)
+        try container.encodeIfPresent(oncePerSession, forKey: .oncePerSession)
+        try container.encodeIfPresent(oncePerUser, forKey: .oncePerUser)
+        try container.encodeIfPresent(cooldownSeconds, forKey: .cooldownSeconds)
+    }
+}
+
+public enum SurveyResponse: Equatable, Sendable {
+    case options([String])
+    case text(TextResponseConfig)
+}
+
+public struct TextResponseConfig: Codable, Equatable, Sendable {
+    public let placeholder: String?
+    public let submitLabel: String?
+    public let allowEmpty: Bool
+    public let minLength: Int?
+    public let maxLength: Int?
+
+    public init(placeholder: String? = nil, submitLabel: String? = nil, allowEmpty: Bool = false, minLength: Int? = nil, maxLength: Int? = nil) {
+        self.placeholder = placeholder
+        self.submitLabel = submitLabel
+        self.allowEmpty = allowEmpty
+        self.minLength = minLength
+        self.maxLength = maxLength
+    }
+}
+
+extension SurveyResponse: Codable {
+    private enum CodingKeys: String, CodingKey { case type, options, placeholder, submitLabel, allowEmpty, minLength, maxLength }
+    private enum ResponseType: String, Codable { case options, text }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(ResponseType.self, forKey: .type)
+        switch type {
+        case .options:
+            let options = try container.decode([String].self, forKey: .options)
+            self = .options(options)
+        case .text:
+            let config = TextResponseConfig(
+                placeholder: try container.decodeIfPresent(String.self, forKey: .placeholder),
+                submitLabel: try container.decodeIfPresent(String.self, forKey: .submitLabel),
+                allowEmpty: try container.decodeIfPresent(Bool.self, forKey: .allowEmpty) ?? false,
+                minLength: try container.decodeIfPresent(Int.self, forKey: .minLength),
+                maxLength: try container.decodeIfPresent(Int.self, forKey: .maxLength)
+            )
+            self = .text(config)
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .options(let options):
+            try container.encode(ResponseType.options, forKey: .type)
+            try container.encode(options, forKey: .options)
+        case .text(let config):
+            try container.encode(ResponseType.text, forKey: .type)
+            try container.encodeIfPresent(config.placeholder, forKey: .placeholder)
+            try container.encodeIfPresent(config.submitLabel, forKey: .submitLabel)
+            if config.allowEmpty { try container.encode(true, forKey: .allowEmpty) }
+            try container.encodeIfPresent(config.minLength, forKey: .minLength)
+            try container.encodeIfPresent(config.maxLength, forKey: .maxLength)
+        }
+    }
 }
 
 public enum TriggerCondition: Codable, Equatable, Sendable {
