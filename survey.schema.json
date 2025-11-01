@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/indigothm/cxhero-ios/raw/main/survey.schema.json",
+  "title": "CXHero Survey Config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["surveys"],
+  "properties": {
+    "surveys": {
+      "type": "array",
+      "description": "Ordered list of survey rules; the first matching rule is presented.",
+      "items": { "$ref": "#/$defs/surveyRule" }
+    }
+  },
+  "$defs": {
+    "surveyRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "message", "options", "trigger"],
+      "properties": {
+        "id": { "type": "string", "description": "Stable identifier for the survey rule." },
+        "title": { "type": "string", "description": "Survey title." },
+        "message": { "type": "string", "description": "Survey message/body." },
+        "options": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "List of button options to present."
+        },
+        "trigger": { "$ref": "#/$defs/triggerCondition" },
+        "oncePerSession": { "type": "boolean", "default": true, "description": "If true, show at most once per current event session." },
+        "oncePerUser": { "type": "boolean", "default": false, "description": "If true, never show again for the same user across sessions." },
+        "cooldownSeconds": { "type": "number", "minimum": 0, "description": "Minimum seconds between presentations for the same user." }
+      }
+    },
+    "triggerCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "oneOf": [
+        { "required": ["event"] }
+      ],
+      "properties": {
+        "event": { "$ref": "#/$defs/eventTrigger" }
+      }
+    },
+    "eventTrigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "description": "Event name to match." },
+        "properties": {
+          "type": "object",
+          "description": "Per-property matchers keyed by property name.",
+          "additionalProperties": { "$ref": "#/$defs/propertyMatcher" }
+        }
+      }
+    },
+    "matchAtom": {
+      "description": "Primitive value for equality: string, number, or boolean.",
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "boolean" }
+      ]
+    },
+    "propertyMatcher": {
+      "description": "Shorthand equals or operator-based matcher.",
+      "oneOf": [
+        { "$ref": "#/$defs/matchAtom" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "value"],
+          "properties": {
+            "op": { "const": "eq" },
+            "value": { "$ref": "#/$defs/matchAtom" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "value"],
+          "properties": {
+            "op": { "const": "ne" },
+            "value": { "$ref": "#/$defs/matchAtom" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "value"],
+          "properties": {
+            "op": { "enum": ["gt", "gte", "lt", "lte"] },
+            "value": { "type": "number" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "value"],
+          "properties": {
+            "op": { "enum": ["contains", "notContains"] },
+            "value": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op"],
+          "properties": {
+            "op": { "enum": ["exists", "notExists"] }
+          }
+        }
+      ]
+    }
+  }
+}
+

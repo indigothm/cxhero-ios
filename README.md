@@ -124,6 +124,94 @@ var body: some View {
 }
 ```
 
+## Survey Config Reference
+
+### Top-level
+| Field   | Type            | Required | Default | Description |
+|--------|-----------------|----------|---------|-------------|
+| `surveys` | `[SurveyRule]` | Yes      | —       | Ordered list of survey rules; the first matching rule is presented. |
+
+### SurveyRule
+| Field            | Type                                   | Required | Default | Description |
+|------------------|----------------------------------------|----------|---------|-------------|
+| `id`             | `String`                                | Yes      | —       | Stable identifier for the survey rule. Used by gating and analytics. |
+| `title`          | `String`                                | Yes      | —       | Title shown in the survey sheet. |
+| `message`        | `String`                                | Yes      | —       | Message/body shown in the survey sheet. |
+| `options`        | `[String]`                              | Yes      | —       | List of button options to present. |
+| `trigger`        | `TriggerCondition`                      | Yes      | —       | When to show the survey (see TriggerCondition). |
+| `oncePerSession` | `Bool`                                  | No       | `true`  | If `true`, the rule is shown at most once per current event session. |
+| `oncePerUser`    | `Bool`                                  | No       | `false` | If `true`, the rule is never shown again for the same `userId` across sessions. Requires a `userID` when starting sessions; otherwise counts under `anon`. |
+| `cooldownSeconds`| `Number` (seconds)                      | No       | —       | Minimum time between presentations for the same `userId`. Ignored if `oncePerUser` is `true` and the rule has already been shown. |
+
+Notes
+- If both `oncePerUser` and `cooldownSeconds` are provided and the rule was already shown for the user, `oncePerUser` takes precedence and blocks future prompts permanently for that user.
+- Session scoping uses `EventRecorder.startSession(userID:metadata:)` to set `userID`. If omitted, the user is recorded as `anon`.
+
+### TriggerCondition
+Currently supported: `event`.
+
+`event` trigger matches a recorded event by name and optional property conditions.
+
+`EventTrigger`
+| Field        | Type                                   | Required | Description |
+|--------------|----------------------------------------|----------|-------------|
+| `name`       | `String`                                | Yes      | Event name to match (e.g. `checkout_success`). |
+| `properties` | `{ String: PropertyMatcher }`           | No       | Per-property conditions (exact or operator-based). If omitted, only the name must match. |
+
+### PropertyMatcher operators
+All operators are case-sensitive. Numeric operators work with integer or double event values (integers are compared after conversion to double).
+
+| Operator        | JSON form                                    | Value type      | Matches when |
+|-----------------|-----------------------------------------------|-----------------|--------------|
+| equals          | shorthand: `"key": 123` or `{ "op": "eq", "value": 123 }` | string/int/double/bool | Event property equals the value. |
+| not equals      | `{ "op": "ne", "value": 123 }`          | string/int/double/bool | Event property does not equal the value. |
+| greater than    | `{ "op": "gt", "value": 10 }`           | number          | Event numeric property is strictly greater. |
+| greater or equal| `{ "op": "gte", "value": 10 }`          | number          | Event numeric property is greater or equal. |
+| less than       | `{ "op": "lt", "value": 10 }`           | number          | Event numeric property is strictly less. |
+| less or equal   | `{ "op": "lte", "value": 10 }`          | number          | Event numeric property is less or equal. |
+| contains        | `{ "op": "contains", "value": "foo" }` | string          | Event string property contains the substring. |
+| notContains     | `{ "op": "notContains", "value": "x" }`| string          | Event string property does not contain the substring. |
+| exists          | `{ "op": "exists" }`                      | —               | Property key exists on the event (value can be any type). |
+| notExists       | `{ "op": "notExists" }`                   | —               | Property key is absent on the event. |
+
+Examples
+- Exact match using shorthand equals:
+```
+"properties": { "plan": "pro", "count": 3 }
+```
+
+- Mixed operators:
+```
+"properties": {
+  "amount": { "op": "gt", "value": 50 },
+  "coupon": { "op": "exists" },
+  "utm": { "op": "contains", "value": "spring" }
+}
+```
+
+### Events emitted by the survey
+- `survey_presented` with `{ id }`
+- `survey_response` with `{ id, option }`
+- `survey_dismissed` with `{ id }` (recorded once per presentation; not duplicated on button presses)
+
+### JSON Schema and Validation
+- The repository includes `survey.schema.json` describing the full configuration.
+- Add a `$schema` reference to your JSON file for editor IntelliSense:
+```
+{
+  "$schema": "./survey.schema.json",
+  "surveys": [
+    { /* your rules */ }
+  ]
+}
+```
+- Validate via Node.js using Ajv CLI:
+```
+npx ajv-cli validate -s survey.schema.json -d survey.json
+```
+- Or validate in Swift:
+  - Load to `SurveyConfig` with `try JSONDecoder().decode(SurveyConfig.self, from: data)` (runtime validation).
+
 ## Behavior
 - Observes `EventRecorder.shared.eventsPublisher`.
 - When an event matches a rule’s trigger, presents a dismissible sheet.
