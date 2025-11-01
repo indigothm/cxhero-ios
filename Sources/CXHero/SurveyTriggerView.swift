@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 import Combine
 
-@available(iOS 13.0, macOS 12.0, tvOS 13.0, watchOS 8.0, *)
+@available(iOS 14.0, macOS 12.0, tvOS 14.0, watchOS 8.0, *)
 @MainActor
 final class SurveyTriggerViewModel: ObservableObject {
     @Published var activeRule: SurveyRule?
@@ -107,7 +107,7 @@ final class SurveyTriggerViewModel: ObservableObject {
     // No async gating init; gating must be ready before subscribing.
 }
 
-@available(iOS 13.0, macOS 12.0, tvOS 13.0, watchOS 8.0, *)
+@available(iOS 14.0, macOS 12.0, tvOS 14.0, watchOS 8.0, *)
 public struct SurveyTriggerView<Content: View>: View {
     @StateObject private var model: SurveyTriggerViewModel
     private let content: () -> Content
@@ -175,7 +175,7 @@ public struct SurveyTriggerView<Content: View>: View {
     }
 }
 
-@available(iOS 13.0, macOS 12.0, tvOS 13.0, watchOS 8.0, *)
+@available(iOS 14.0, macOS 12.0, tvOS 14.0, watchOS 8.0, *)
 struct SurveySheet: View {
     let rule: SurveyRule
     let onSubmitOption: (String) -> Void
@@ -219,7 +219,7 @@ struct SurveySheet: View {
                         )
                     if textResponse.isEmpty, let placeholder = config.placeholder {
                         Text(placeholder)
-                            .foregroundStyle(Color.secondary)
+                            .foregroundColor(Color.secondary)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 12)
                     }
@@ -229,7 +229,7 @@ struct SurveySheet: View {
                         Spacer()
                         Text("\(textResponse.count)/\(max)")
                             .font(.caption)
-                            .foregroundStyle(textResponse.count > max ? Color.red : Color.secondary)
+                            .foregroundColor(textResponse.count > max ? Color.red : Color.secondary)
                     }
                 }
                 Button(config.submitLabel ?? "Submit") {
