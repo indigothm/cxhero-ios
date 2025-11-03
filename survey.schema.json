@@ -35,7 +35,20 @@
         "trigger": { "$ref": "#/$defs/triggerCondition" },
         "oncePerSession": { "type": "boolean", "default": true, "description": "If true, show at most once per current event session." },
         "oncePerUser": { "type": "boolean", "default": false, "description": "If true, never show again for the same user across sessions." },
-        "cooldownSeconds": { "type": "number", "minimum": 0, "description": "Minimum seconds between presentations for the same user." }
+        "cooldownSeconds": { "type": "number", "minimum": 0, "description": "Minimum seconds between presentations for the same user." },
+        "maxAttempts": { "type": "integer", "minimum": 1, "description": "Maximum number of times to attempt showing this survey before giving up (nil = unlimited)." },
+        "attemptCooldownSeconds": { "type": "number", "minimum": 0, "description": "Cooldown in seconds between re-attempts when survey is dismissed without completion (defaults to cooldownSeconds if not specified)." },
+        "notification": { "$ref": "#/$defs/notificationConfig" }
+      }
+    },
+    "notificationConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "body"],
+      "properties": {
+        "title": { "type": "string", "description": "Notification title." },
+        "body": { "type": "string", "description": "Notification body text." },
+        "sound": { "type": "boolean", "default": true, "description": "Whether to play sound with notification." }
       }
     },
     "surveyResponse": {
@@ -66,6 +79,33 @@
             "minLength": { "type": "integer", "minimum": 0, "description": "Minimum number of characters (after trimming)." },
             "maxLength": { "type": "integer", "minimum": 1, "description": "Maximum number of characters (after trimming)." }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "options"],
+          "properties": {
+            "type": { "const": "combined", "description": "Combined response with rating options and optional text field." },
+            "options": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string" },
+              "description": "Rating choices to render as selectable buttons."
+            },
+            "optionsLabel": { "type": "string", "description": "Optional label above the rating buttons." },
+            "submitLabel": { "type": "string", "description": "Label for the submit button." },
+            "textField": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "label": { "type": "string", "description": "Label above the text field." },
+                "placeholder": { "type": "string", "description": "Placeholder text for the text field." },
+                "required": { "type": "boolean", "default": false, "description": "Whether the text field must be filled." },
+                "minLength": { "type": "integer", "minimum": 0, "description": "Minimum characters (after trimming)." },
+                "maxLength": { "type": "integer", "minimum": 1, "description": "Maximum characters (after trimming)." }
+              }
+            }
+          }
         }
       ]
     },
@@ -89,7 +129,8 @@
           "type": "object",
           "description": "Per-property matchers keyed by property name.",
           "additionalProperties": { "$ref": "#/$defs/propertyMatcher" }
-        }
+        },
+        "scheduleAfterSeconds": { "type": "number", "minimum": 0, "description": "Delay in seconds before showing the survey after the event matches (nil or 0 = immediate)." }
       }
     },
     "matchAtom": {

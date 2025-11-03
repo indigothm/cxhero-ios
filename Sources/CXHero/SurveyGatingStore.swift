@@ -12,9 +12,14 @@ actor SurveyGatingStore {
     }
 
     struct Gating: Codable { var rules: [String: Record] = [:] }
-    struct Record: Codable { var lastShownAt: Date; var shownOnce: Bool }
+    struct Record: Codable { 
+        var lastShownAt: Date
+        var shownOnce: Bool
+        var attemptCount: Int = 0
+        var completedOnce: Bool = false
+    }
 
-    func canShow(ruleId: String, forUser userId: String?, oncePerUser: Bool?, cooldownSeconds: TimeInterval?) async -> Bool {
+    func canShow(ruleId: String, forUser userId: String?, oncePerUser: Bool?, cooldownSeconds: TimeInterval?, maxAttempts: Int?, attemptCooldownSeconds: TimeInterval?) async -> Bool {
         let path = gatingURL(for: userId)
         let file = path
         guard let gating = (try? Data(contentsOf: file)).flatMap({ try? decoder.decode(Gating.self, from: $0) }) else {
@@ -22,8 +27,20 @@ actor SurveyGatingStore {
             return true
         }
         if let rec = gating.rules[ruleId] {
+            // If survey was completed, don't show again
+            if rec.completedOnce { return false }
+            
+            // Check if max attempts reached
+            if let max = maxAttempts, rec.attemptCount >= max {
+                return false
+            }
+            
+            // Check oncePerUser (blocks after first attempt, not completion)
             if oncePerUser ?? false { return false }
-            if let cd = cooldownSeconds {
+            
+            // Check cooldown - use attemptCooldownSeconds if available, otherwise cooldownSeconds
+            let cooldown = attemptCooldownSeconds ?? cooldownSeconds
+            if let cd = cooldown {
                 let next = rec.lastShownAt.addingTimeInterval(cd)
                 if Date() < next { return false }
             }
@@ -36,8 +53,41 @@ actor SurveyGatingStore {
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             var gating = (try? Data(contentsOf: url)).flatMap { try? decoder.decode(Gating.self, from: $0) } ?? Gating()
-            let rec = Record(lastShownAt: Date(), shownOnce: true)
-            gating.rules[ruleId] = rec
+            
+            if var existingRec = gating.rules[ruleId] {
+                // Increment attempt count
+                existingRec.attemptCount += 1
+                existingRec.lastShownAt = Date()
+                existingRec.shownOnce = true
+                gating.rules[ruleId] = existingRec
+            } else {
+                // First time showing
+                let rec = Record(lastShownAt: Date(), shownOnce: true, attemptCount: 1, completedOnce: false)
+                gating.rules[ruleId] = rec
+            }
+            
+            let data = try encoder.encode(gating)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            // ignore errors
+        }
+    }
+    
+    func markCompleted(ruleId: String, forUser userId: String?) async {
+        let url = gatingURL(for: userId)
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            var gating = (try? Data(contentsOf: url)).flatMap { try? decoder.decode(Gating.self, from: $0) } ?? Gating()
+            
+            if var existingRec = gating.rules[ruleId] {
+                existingRec.completedOnce = true
+                gating.rules[ruleId] = existingRec
+            } else {
+                // Shouldn't happen, but handle gracefully
+                let rec = Record(lastShownAt: Date(), shownOnce: true, attemptCount: 1, completedOnce: true)
+                gating.rules[ruleId] = rec
+            }
+            
             let data = try encoder.encode(gating)
             try data.write(to: url, options: .atomic)
         } catch {

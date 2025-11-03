@@ -2,6 +2,22 @@ import Foundation
 
 public struct SurveyConfig: Codable, Equatable, Sendable {
     public let surveys: [SurveyRule]
+    
+    public init(surveys: [SurveyRule]) {
+        self.surveys = surveys
+    }
+}
+
+public struct NotificationConfig: Codable, Equatable, Sendable {
+    public let title: String
+    public let body: String
+    public let sound: Bool
+    
+    public init(title: String, body: String, sound: Bool = true) {
+        self.title = title
+        self.body = body
+        self.sound = sound
+    }
 }
 
 public struct SurveyRule: Codable, Equatable, Sendable, Identifiable {
@@ -14,15 +30,24 @@ public struct SurveyRule: Codable, Equatable, Sendable, Identifiable {
     public let oncePerSession: Bool?
     public let oncePerUser: Bool?
     public let cooldownSeconds: TimeInterval?
+    /// Maximum number of times to attempt showing this survey before giving up (nil = unlimited)
+    public let maxAttempts: Int?
+    /// Cooldown between re-attempts when survey is dismissed without completion (nil = use cooldownSeconds)
+    public let attemptCooldownSeconds: TimeInterval?
+    /// Local notification configuration for when survey is ready (nil = no notification sent)
+    public let notification: NotificationConfig?
 
     public var options: [String] {
-        if case .options(let opts) = response { return opts }
-        return []
+        switch response {
+        case .options(let opts): return opts
+        case .combined(let config): return config.options
+        case .text: return []
+        }
     }
 
-    enum CodingKeys: String, CodingKey { case ruleId = "id", title, message, options, trigger, oncePerSession, oncePerUser, cooldownSeconds, response }
+    enum CodingKeys: String, CodingKey { case ruleId = "id", title, message, options, trigger, oncePerSession, oncePerUser, cooldownSeconds, response, maxAttempts, attemptCooldownSeconds, notification }
 
-    public init(ruleId: String, title: String, message: String, response: SurveyResponse, trigger: TriggerCondition, oncePerSession: Bool? = nil, oncePerUser: Bool? = nil, cooldownSeconds: TimeInterval? = nil) {
+    public init(ruleId: String, title: String, message: String, response: SurveyResponse, trigger: TriggerCondition, oncePerSession: Bool? = nil, oncePerUser: Bool? = nil, cooldownSeconds: TimeInterval? = nil, maxAttempts: Int? = nil, attemptCooldownSeconds: TimeInterval? = nil, notification: NotificationConfig? = nil) {
         self.ruleId = ruleId
         self.title = title
         self.message = message
@@ -31,6 +56,9 @@ public struct SurveyRule: Codable, Equatable, Sendable, Identifiable {
         self.oncePerSession = oncePerSession
         self.oncePerUser = oncePerUser
         self.cooldownSeconds = cooldownSeconds
+        self.maxAttempts = maxAttempts
+        self.attemptCooldownSeconds = attemptCooldownSeconds
+        self.notification = notification
     }
 
     public init(from decoder: Decoder) throws {
@@ -49,6 +77,9 @@ public struct SurveyRule: Codable, Equatable, Sendable, Identifiable {
         self.oncePerSession = try container.decodeIfPresent(Bool.self, forKey: .oncePerSession)
         self.oncePerUser = try container.decodeIfPresent(Bool.self, forKey: .oncePerUser)
         self.cooldownSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .cooldownSeconds)
+        self.maxAttempts = try container.decodeIfPresent(Int.self, forKey: .maxAttempts)
+        self.attemptCooldownSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .attemptCooldownSeconds)
+        self.notification = try container.decodeIfPresent(NotificationConfig.self, forKey: .notification)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -61,12 +92,16 @@ public struct SurveyRule: Codable, Equatable, Sendable, Identifiable {
         try container.encodeIfPresent(oncePerSession, forKey: .oncePerSession)
         try container.encodeIfPresent(oncePerUser, forKey: .oncePerUser)
         try container.encodeIfPresent(cooldownSeconds, forKey: .cooldownSeconds)
+        try container.encodeIfPresent(maxAttempts, forKey: .maxAttempts)
+        try container.encodeIfPresent(attemptCooldownSeconds, forKey: .attemptCooldownSeconds)
+        try container.encodeIfPresent(notification, forKey: .notification)
     }
 }
 
 public enum SurveyResponse: Equatable, Sendable {
     case options([String])
     case text(TextResponseConfig)
+    case combined(CombinedResponseConfig)
 }
 
 public struct TextResponseConfig: Codable, Equatable, Sendable {
@@ -85,9 +120,42 @@ public struct TextResponseConfig: Codable, Equatable, Sendable {
     }
 }
 
+public struct CombinedResponseConfig: Codable, Equatable, Sendable {
+    public let options: [String]
+    public let optionsLabel: String?
+    public let textField: TextFieldConfig?
+    public let submitLabel: String?
+    
+    public init(options: [String], optionsLabel: String? = nil, textField: TextFieldConfig? = nil, submitLabel: String? = nil) {
+        self.options = options
+        self.optionsLabel = optionsLabel
+        self.textField = textField
+        self.submitLabel = submitLabel
+    }
+}
+
+public struct TextFieldConfig: Codable, Equatable, Sendable {
+    public let label: String?
+    public let placeholder: String?
+    public let required: Bool
+    public let minLength: Int?
+    public let maxLength: Int?
+    
+    public init(label: String? = nil, placeholder: String? = nil, required: Bool = false, minLength: Int? = nil, maxLength: Int? = nil) {
+        self.label = label
+        self.placeholder = placeholder
+        self.required = required
+        self.minLength = minLength
+        self.maxLength = maxLength
+    }
+}
+
 extension SurveyResponse: Codable {
-    private enum CodingKeys: String, CodingKey { case type, options, placeholder, submitLabel, allowEmpty, minLength, maxLength }
-    private enum ResponseType: String, Codable { case options, text }
+    private enum CodingKeys: String, CodingKey { 
+        case type, options, placeholder, submitLabel, allowEmpty, minLength, maxLength
+        case optionsLabel, textField, required, label
+    }
+    private enum ResponseType: String, Codable { case options, text, combined }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -105,6 +173,30 @@ extension SurveyResponse: Codable {
                 maxLength: try container.decodeIfPresent(Int.self, forKey: .maxLength)
             )
             self = .text(config)
+        case .combined:
+            let options = try container.decode([String].self, forKey: .options)
+            let optionsLabel = try container.decodeIfPresent(String.self, forKey: .optionsLabel)
+            let submitLabel = try container.decodeIfPresent(String.self, forKey: .submitLabel)
+            
+            // Decode text field if present
+            var textField: TextFieldConfig? = nil
+            if let textFieldContainer = try? container.nestedContainer(keyedBy: CodingKeys.self, forKey: .textField) {
+                textField = TextFieldConfig(
+                    label: try textFieldContainer.decodeIfPresent(String.self, forKey: .label),
+                    placeholder: try textFieldContainer.decodeIfPresent(String.self, forKey: .placeholder),
+                    required: try textFieldContainer.decodeIfPresent(Bool.self, forKey: .required) ?? false,
+                    minLength: try textFieldContainer.decodeIfPresent(Int.self, forKey: .minLength),
+                    maxLength: try textFieldContainer.decodeIfPresent(Int.self, forKey: .maxLength)
+                )
+            }
+            
+            let config = CombinedResponseConfig(
+                options: options,
+                optionsLabel: optionsLabel,
+                textField: textField,
+                submitLabel: submitLabel
+            )
+            self = .combined(config)
         }
     }
 
@@ -121,6 +213,20 @@ extension SurveyResponse: Codable {
             if config.allowEmpty { try container.encode(true, forKey: .allowEmpty) }
             try container.encodeIfPresent(config.minLength, forKey: .minLength)
             try container.encodeIfPresent(config.maxLength, forKey: .maxLength)
+        case .combined(let config):
+            try container.encode(ResponseType.combined, forKey: .type)
+            try container.encode(config.options, forKey: .options)
+            try container.encodeIfPresent(config.optionsLabel, forKey: .optionsLabel)
+            try container.encodeIfPresent(config.submitLabel, forKey: .submitLabel)
+            
+            if let textField = config.textField {
+                var textFieldContainer = container.nestedContainer(keyedBy: CodingKeys.self, forKey: .textField)
+                try textFieldContainer.encodeIfPresent(textField.label, forKey: .label)
+                try textFieldContainer.encodeIfPresent(textField.placeholder, forKey: .placeholder)
+                if textField.required { try textFieldContainer.encode(true, forKey: .required) }
+                try textFieldContainer.encodeIfPresent(textField.minLength, forKey: .minLength)
+                try textFieldContainer.encodeIfPresent(textField.maxLength, forKey: .maxLength)
+            }
         }
     }
 }
@@ -147,6 +253,14 @@ public enum TriggerCondition: Codable, Equatable, Sendable {
 public struct EventTrigger: Codable, Equatable, Sendable {
     public let name: String
     public let properties: [String: PropertyMatcher]?
+    /// Delay in seconds before showing the survey after the event matches (nil = immediate)
+    public let scheduleAfterSeconds: TimeInterval?
+    
+    public init(name: String, properties: [String: PropertyMatcher]? = nil, scheduleAfterSeconds: TimeInterval? = nil) {
+        self.name = name
+        self.properties = properties
+        self.scheduleAfterSeconds = scheduleAfterSeconds
+    }
 }
 
 public enum PropertyMatcher: Equatable, Sendable {
