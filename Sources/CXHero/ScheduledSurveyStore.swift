@@ -82,6 +82,32 @@ actor ScheduledSurveyStore {
         }
     }
     
+    /// Get all triggered surveys for a user, regardless of session
+    /// Used to restore surveys that should have shown during previous sessions
+    func getAllTriggeredSurveys(for userId: String?) async -> [ScheduledSurvey] {
+        let url = scheduledURL(for: userId)
+        guard let data = try? Data(contentsOf: url),
+              let surveys = try? decoder.decode(ScheduledSurveys.self, from: data) else {
+            return []
+        }
+        
+        // Return surveys that should have triggered by now, regardless of session
+        return surveys.scheduled.filter { $0.isExpired }
+    }
+    
+    /// Get all pending surveys for a user, regardless of session
+    /// Used to restore surveys that were scheduled but not yet shown
+    func getAllPendingSurveys(for userId: String?) async -> [ScheduledSurvey] {
+        let url = scheduledURL(for: userId)
+        guard let data = try? Data(contentsOf: url),
+              let surveys = try? decoder.decode(ScheduledSurveys.self, from: data) else {
+            return []
+        }
+        
+        // Return surveys that haven't triggered yet, regardless of session
+        return surveys.scheduled.filter { !$0.isExpired }
+    }
+    
     func removeScheduled(ruleId: String, sessionId: String, userId: String?) async {
         let url = scheduledURL(for: userId)
         do {

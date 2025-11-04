@@ -22,7 +22,7 @@ final class SurveyTriggerViewModel: ObservableObject {
     
     /// When true, bypasses all gating rules (completion tracking, attempt limits, cooldowns) for testing
     var debugModeEnabled: Bool = false
-    
+
     /// When true, enables local notification scheduling for delayed surveys
     var notificationsEnabled: Bool = false
 
@@ -77,8 +77,8 @@ final class SurveyTriggerViewModel: ObservableObject {
         for rule in config.surveys {
             // In debug mode, skip all gating checks
             if !debugModeEnabled {
-                if rule.oncePerSession ?? true {
-                    if shownThisSession.contains(rule.ruleId) { continue }
+            if rule.oncePerSession ?? true {
+                if shownThisSession.contains(rule.ruleId) { continue }
                 }
             }
             
@@ -86,7 +86,7 @@ final class SurveyTriggerViewModel: ObservableObject {
             
             // In debug mode, skip gating checks (completion, attempts, cooldowns)
             if !debugModeEnabled {
-                if let gating = gating {
+            if let gating = gating {
                     let allow = await gating.canShow(
                         ruleId: rule.ruleId,
                         forUser: event.userId,
@@ -95,8 +95,8 @@ final class SurveyTriggerViewModel: ObservableObject {
                         maxAttempts: rule.maxAttempts,
                         attemptCooldownSeconds: rule.attemptCooldownSeconds
                     )
-                    if !allow { continue }
-                }
+                if !allow { continue }
+            }
             }
             
             // Check if trigger has a delay
@@ -131,15 +131,24 @@ final class SurveyTriggerViewModel: ObservableObject {
             }
             
             // Schedule local notification if enabled and configured
-            if notificationsEnabled, 
-               let notificationConfig = rule.notification,
-               let scheduler = notificationScheduler {
-                await scheduler.schedule(
-                    ruleId: rule.ruleId,
-                    sessionId: sessionId.uuidString,
-                    notificationConfig: notificationConfig,
-                    triggerAfterSeconds: delaySeconds
-                )
+            if notificationsEnabled {
+                if let notificationConfig = rule.notification {
+                    if let scheduler = notificationScheduler {
+                        print("[CXHero] 📬 Scheduling notification for '\(rule.ruleId)' in \(delaySeconds)s")
+                        await scheduler.schedule(
+                            ruleId: rule.ruleId,
+                            sessionId: sessionId.uuidString,
+                            notificationConfig: notificationConfig,
+                            triggerAfterSeconds: delaySeconds
+                        )
+                    } else {
+                        print("[CXHero] ⚠️ Notification scheduler not initialized!")
+                    }
+                } else {
+                    print("[CXHero] ℹ️ No notification config for survey '\(rule.ruleId)'")
+                }
+            } else {
+                print("[CXHero] ℹ️ Notifications not enabled")
             }
         }
         
@@ -167,13 +176,19 @@ final class SurveyTriggerViewModel: ObservableObject {
     }
     
     private func showSurvey(rule: SurveyRule, userId: String?) async {
-        activeRule = rule
-        isPresented = true
-        sheetHandledAnalytics = false
+        await MainActor.run {
+            activeRule = rule
+            isPresented = true
+            sheetHandledAnalytics = false
+        }
         
         // In debug mode, skip tracking shown state
         if !debugModeEnabled {
-            if rule.oncePerSession ?? true { shownThisSession.insert(rule.ruleId) }
+            if rule.oncePerSession ?? true { 
+                await MainActor.run {
+                    shownThisSession.insert(rule.ruleId)
+                }
+            }
             if let gating = gating { await gating.markShown(ruleId: rule.ruleId, forUser: userId) }
         }
         
@@ -212,73 +227,108 @@ final class SurveyTriggerViewModel: ObservableObject {
             .sink { [weak self] event in
                 self?.handle(event: event)
             }
+        
+        // Listen for session start to restore pending surveys
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("cxHeroSessionStarted"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { [weak self] in
+                print("[CXHero] 🔔 Session started - restoring pending surveys")
+                await self?.restorePendingScheduledSurveys()
+            }
+        }
+        
         Task { [weak self] in
             let session = await self?.recorder.currentSession()
             self?.resetFor(session: session)
+            // Try to restore on init (will succeed if session already exists)
             await self?.restorePendingScheduledSurveys()
         }
     }
     
     private func restorePendingScheduledSurveys() async {
-        guard let session = await recorder.currentSession(),
-              let store = scheduledStore else { return }
+        print("[CXHero] 🔍 Checking for pending scheduled surveys...")
+        
+        guard let session = await recorder.currentSession() else {
+            print("[CXHero] ⚠️ No current session, cannot restore surveys")
+            return
+        }
+        
+        guard let store = scheduledStore else {
+            print("[CXHero] ⚠️ No scheduled store, cannot restore surveys")
+            return
+        }
         
         let userId = session.userId
-        let sessionId = session.id.uuidString
+        print("[CXHero] 📋 Restoring surveys for userId: \(userId ?? "anonymous"), sessionId: \(session.id)")
         
-        // Check for surveys that should have already triggered
-        let triggered = await store.getTriggeredSurveys(for: userId, sessionId: sessionId)
+        // Check for surveys that should have already triggered (from ANY session)
+        // This allows surveys scheduled in previous sessions to be shown after app restart
+        let triggered = await store.getAllTriggeredSurveys(for: userId)
+        print("[CXHero] 📊 Found \(triggered.count) triggered surveys")
+        
         for scheduled in triggered {
+            print("[CXHero] ⏰ Triggered survey: id=\(scheduled.id), triggerAt=\(scheduled.triggerAt), sessionId=\(scheduled.sessionId)")
             // Find the rule in config
             if let rule = config.surveys.first(where: { $0.ruleId == scheduled.id }) {
+                print("[CXHero] ✅ Showing triggered survey: \(rule.ruleId)")
                 // Show immediately since trigger time has passed
                 await showSurvey(rule: rule, userId: userId)
-                await store.removeScheduled(ruleId: rule.ruleId, sessionId: sessionId, userId: userId)
+                // Remove with original session ID
+                await store.removeScheduled(ruleId: rule.ruleId, sessionId: scheduled.sessionId, userId: userId)
                 break // Only show one survey at a time
+            } else {
+                print("[CXHero] ⚠️ Rule not found in config for triggered survey: \(scheduled.id)")
             }
         }
         
-        // Restore pending scheduled surveys that haven't triggered yet
-        let pending = await store.getPendingSurveys(for: userId, sessionId: sessionId)
+        // Restore pending scheduled surveys that haven't triggered yet (from ANY session)
+        let pending = await store.getAllPendingSurveys(for: userId)
+        print("[CXHero] 📊 Found \(pending.count) pending surveys")
+        
         for scheduled in pending {
+            let remainingDelay = scheduled.remainingDelay
+            print("[CXHero] ⏱️ Pending survey: id=\(scheduled.id), triggerAt=\(scheduled.triggerAt), remainingDelay=\(remainingDelay)s, sessionId=\(scheduled.sessionId)")
+            
             // Find the rule in config
             if let rule = config.surveys.first(where: { $0.ruleId == scheduled.id }) {
-                // Calculate remaining delay
-                let remainingDelay = scheduled.remainingDelay
                 if remainingDelay > 0 {
-                    // Re-schedule with remaining time
-                    scheduleDelayedSurveyWithRemainingTime(rule: rule, userId: userId, delaySeconds: remainingDelay, sessionId: sessionId)
+                    print("[CXHero] 🔄 Re-scheduling survey with \(remainingDelay)s remaining")
+                    // Re-schedule with remaining time (keep original session ID for cleanup)
+                    scheduleDelayedSurveyForRestoredSchedule(
+                        rule: rule, 
+                        userId: userId, 
+                        delaySeconds: remainingDelay,
+                        originalSessionId: scheduled.sessionId
+                    )
                 } else {
+                    print("[CXHero] ✅ Showing pending survey (delay expired): \(rule.ruleId)")
                     // Should trigger now
                     await showSurvey(rule: rule, userId: userId)
-                    await store.removeScheduled(ruleId: rule.ruleId, sessionId: sessionId, userId: userId)
+                    // Remove with original session ID
+                    await store.removeScheduled(ruleId: rule.ruleId, sessionId: scheduled.sessionId, userId: userId)
                     break // Only show one survey at a time
                 }
+            } else {
+                print("[CXHero] ⚠️ Rule not found in config for pending survey: \(scheduled.id)")
             }
+        }
+        
+        if triggered.isEmpty && pending.isEmpty {
+            print("[CXHero] ℹ️ No pending surveys to restore")
         }
     }
     
     private func scheduleDelayedSurveyWithRemainingTime(rule: SurveyRule, userId: String?, delaySeconds: TimeInterval, sessionId: String) {
-        // Cancel any existing scheduled task for this rule
-        scheduledTasks[rule.ruleId]?.cancel()
-        
-        // Don't re-persist to store since it's already there
-        
-        let task = Task { @MainActor in
-            do {
-                try await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
-                await showSurvey(rule: rule, userId: userId)
-                
-                // Remove from persistent store after showing
-                if let store = scheduledStore {
-                    await store.removeScheduled(ruleId: rule.ruleId, sessionId: sessionId, userId: userId)
-                }
-            } catch {
-                // Task was cancelled
-            }
-            scheduledTasks.removeValue(forKey: rule.ruleId)
-        }
-        scheduledTasks[rule.ruleId] = task
+        // Note: This is kept for backwards compatibility but now just delegates to the restored schedule handler
+        scheduleDelayedSurveyForRestoredSchedule(
+            rule: rule,
+            userId: userId,
+            delaySeconds: delaySeconds,
+            originalSessionId: sessionId
+        )
     }
     
     func markSurveyCompleted(ruleId: String) {
@@ -328,6 +378,79 @@ final class SurveyTriggerViewModel: ObservableObject {
             }
         }
     }
+    
+    /// Check for and present any pending surveys from previous sessions
+    /// Call this on app launch/foreground to handle surveys that were scheduled but not shown
+    public func checkAndPresentPendingSurveys() async {
+        guard let session = await recorder.currentSession(),
+              let store = scheduledStore else { return }
+        
+        let userId = session.userId
+        
+        // Check for surveys that should have already triggered (from any session)
+        let triggered = await store.getAllTriggeredSurveys(for: userId)
+        for scheduled in triggered {
+            // Find the rule in config
+            if let rule = config.surveys.first(where: { $0.ruleId == scheduled.id }) {
+                // Show immediately since trigger time has passed
+                await showSurvey(rule: rule, userId: userId)
+                // Remove with original session ID
+                await store.removeScheduled(ruleId: rule.ruleId, sessionId: scheduled.sessionId, userId: userId)
+                break // Only show one survey at a time
+            }
+        }
+        
+        // Also check pending surveys that haven't triggered yet
+        let pending = await store.getAllPendingSurveys(for: userId)
+        for scheduled in pending {
+            // Find the rule in config
+            if let rule = config.surveys.first(where: { $0.ruleId == scheduled.id }) {
+                let remainingDelay = scheduled.remainingDelay
+                if remainingDelay <= 0 {
+                    // Should trigger now
+                    await showSurvey(rule: rule, userId: userId)
+                    await store.removeScheduled(ruleId: rule.ruleId, sessionId: scheduled.sessionId, userId: userId)
+                    break
+                } else {
+                    // Re-schedule with remaining time (keep original session ID for cleanup)
+                    scheduleDelayedSurveyForRestoredSchedule(
+                        rule: rule, 
+                        userId: userId, 
+                        delaySeconds: remainingDelay,
+                        originalSessionId: scheduled.sessionId
+                    )
+                }
+            }
+        }
+    }
+    
+    private func scheduleDelayedSurveyForRestoredSchedule(
+        rule: SurveyRule, 
+        userId: String?, 
+        delaySeconds: TimeInterval,
+        originalSessionId: String
+    ) {
+        // Cancel any existing scheduled task for this rule
+        scheduledTasks[rule.ruleId]?.cancel()
+        
+        // Don't re-persist - already in store with original session ID
+        
+        let task = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+                await showSurvey(rule: rule, userId: userId)
+                
+                // Remove using original session ID
+                if let store = scheduledStore {
+                    await store.removeScheduled(ruleId: rule.ruleId, sessionId: originalSessionId, userId: userId)
+                }
+            } catch {
+                // Task was cancelled
+            }
+            scheduledTasks.removeValue(forKey: rule.ruleId)
+        }
+        scheduledTasks[rule.ruleId] = task
+    }
 
     // No async gating init; gating must be ready before subscribing.
 }
@@ -357,6 +480,12 @@ public struct SurveyTriggerView<Content: View>: View {
     public func handleNotificationResponse(surveyId: String, sessionId: String) {
         model.handleNotificationTap(surveyId: surveyId, sessionId: sessionId)
         onNotificationTap?(surveyId, sessionId)
+    }
+    
+    /// Check for and present any pending surveys from previous sessions
+    /// Call this on app launch or when app becomes active to handle surveys scheduled in previous sessions
+    public func checkPendingSurveys() async {
+        await model.checkAndPresentPendingSurveys()
     }
 
     public var body: some View {
@@ -441,14 +570,14 @@ struct SurveySheet: View {
                 VStack(spacing: 24) {
                     // Header section
                     VStack(spacing: 12) {
-                        Text(rule.title)
+            Text(rule.title)
                             .font(.system(size: 24, weight: .bold))
                             .multilineTextAlignment(.center)
                             .foregroundColor(.primary)
                         
-                        Text(rule.message)
+            Text(rule.message)
                             .font(.system(size: 16))
-                            .multilineTextAlignment(.center)
+                .multilineTextAlignment(.center)
                             .foregroundColor(.secondary)
                             .lineSpacing(4)
                     }
@@ -456,9 +585,9 @@ struct SurveySheet: View {
                     .padding(.top, 8)
                     
                     // Content
-                    content
+            content
                         .padding(.horizontal, 24)
-                }
+        }
                 .padding(.bottom, 32)
             }
         }
@@ -590,8 +719,8 @@ struct SurveySheet: View {
         case .text(let config):
             VStack(spacing: 20) {
                 // Text input area
-                VStack(alignment: .leading, spacing: 8) {
-                    ZStack(alignment: .topLeading) {
+            VStack(alignment: .leading, spacing: 8) {
+                ZStack(alignment: .topLeading) {
                         RoundedRectangle(cornerRadius: 12)
                             .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
                             .overlay(
@@ -599,27 +728,27 @@ struct SurveySheet: View {
                                     .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
                             )
                         
-                        TextEditor(text: $textResponse)
-                            .frame(minHeight: 120)
+                    TextEditor(text: $textResponse)
+                        .frame(minHeight: 120)
                             .padding(12)
                             .background(Color.clear)
                             .modifier(TextEditorBackgroundModifier())
                         
-                        if textResponse.isEmpty, let placeholder = config.placeholder {
-                            Text(placeholder)
+                    if textResponse.isEmpty, let placeholder = config.placeholder {
+                        Text(placeholder)
                                 .foregroundColor(.secondary.opacity(0.6))
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 20)
                                 .allowsHitTesting(false)
-                        }
                     }
+                }
                     .frame(height: 140)
                     
-                    if let max = config.maxLength {
-                        HStack {
-                            Spacer()
-                            Text("\(textResponse.count)/\(max)")
-                                .font(.caption)
+                if let max = config.maxLength {
+                    HStack {
+                        Spacer()
+                        Text("\(textResponse.count)/\(max)")
+                            .font(.caption)
                                 .foregroundColor(textResponse.count > max ? .red : .secondary)
                         }
                     }

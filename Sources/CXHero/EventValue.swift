@@ -25,5 +25,34 @@ public enum EventValue: Codable, Equatable, Sendable {
         case .bool(let b): try container.encode(b)
         }
     }
+    
+    // MARK: - Convenience accessors
+    
+    /// Extract string value if this is a .string case
+    public var asString: String? {
+        if case let .string(s) = self { return s }
+        return nil
+    }
+    
+    /// Extract int value if this is an .int case
+    public var asInt: Int? {
+        if case let .int(i) = self { return i }
+        return nil
+    }
+    
+    /// Extract double value if this is a .double case, or convert int to double
+    public var asDouble: Double? {
+        switch self {
+        case .double(let d): return d
+        case .int(let i): return Double(i)
+        default: return nil
+        }
+    }
+    
+    /// Extract bool value if this is a .bool case
+    public var asBool: Bool? {
+        if case let .bool(b) = self { return b }
+        return nil
+    }
 }
 

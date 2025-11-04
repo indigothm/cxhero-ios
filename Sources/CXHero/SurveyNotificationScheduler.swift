@@ -33,6 +33,13 @@ public actor SurveyNotificationScheduler {
         notificationConfig: NotificationConfig,
         triggerAfterSeconds: TimeInterval
     ) async {
+        // Check permissions first
+        let settings = await notificationCenter.notificationSettings()
+        guard settings.authorizationStatus == .authorized else {
+            print("[CXHero-Notification] ⚠️ Notification permission not authorized, skipping schedule")
+            return
+        }
+        
         let content = UNMutableNotificationContent()
         content.title = notificationConfig.title
         content.body = notificationConfig.body
@@ -61,8 +68,9 @@ public actor SurveyNotificationScheduler {
         
         do {
             try await notificationCenter.add(request)
+            print("[CXHero-Notification] ✅ Scheduled notification for survey '\(ruleId)' in \(triggerAfterSeconds)s")
         } catch {
-            // Silently ignore notification scheduling errors
+            print("[CXHero-Notification] ❌ Failed to schedule notification: \(error.localizedDescription)")
         }
     }
     

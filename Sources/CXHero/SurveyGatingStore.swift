@@ -63,7 +63,7 @@ actor SurveyGatingStore {
             } else {
                 // First time showing
                 let rec = Record(lastShownAt: Date(), shownOnce: true, attemptCount: 1, completedOnce: false)
-                gating.rules[ruleId] = rec
+            gating.rules[ruleId] = rec
             }
             
             let data = try encoder.encode(gating)

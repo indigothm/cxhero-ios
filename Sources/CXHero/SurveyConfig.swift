@@ -401,15 +401,3 @@ extension MatchAtom {
     }
 }
 
-extension EventValue {
-    var asDouble: Double? {
-        switch self {
-        case .double(let d): return d
-        case .int(let i): return Double(i)
-        default: return nil
-        }
-    }
-    var asString: String? {
-        if case let .string(s) = self { return s } else { return nil }
-    }
-}
