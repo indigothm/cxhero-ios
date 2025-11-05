@@ -121,12 +121,13 @@ actor SessionCoordinator {
 
     func currentSessionInfo() -> EventSession? { currentSession }
 
-    func record(name: String, properties: [String: EventValue]?) async -> Event? {
+    func record(name: String, properties: [String: EventValue]?) async -> (event: Event?, autoStartedSession: EventSession?) {
         // Ensure we have a session; start an anonymous one if needed
+        var autoStartedSession: EventSession? = nil
         if currentSession == nil || currentStore == nil {
-            _ = await startSession(userID: nil, metadata: nil)
+            autoStartedSession = await startSession(userID: nil, metadata: nil)
         }
-        guard let session = currentSession, let store = currentStore else { return nil }
+        guard let session = currentSession, let store = currentStore else { return (nil, nil) }
 
         let event = Event(
             name: name,
@@ -135,7 +136,7 @@ actor SessionCoordinator {
             userId: session.userId
         )
         await store.append(event)
-        return event
+        return (event, autoStartedSession)
     }
 
     func eventsInCurrentSession() async -> [Event] {
@@ -240,6 +241,12 @@ actor SessionCoordinator {
     }
 }
 
+/// Session lifecycle events published by EventRecorder
+public enum SessionLifecycleEvent {
+    case started(session: EventSession)
+    case ended(session: EventSession?)
+}
+
 /// Public singleton interface for recording and inspecting events with session scoping.
 public final class EventRecorder: @unchecked Sendable {
     public static let shared = EventRecorder()
@@ -247,6 +254,7 @@ public final class EventRecorder: @unchecked Sendable {
     private let coordinator: SessionCoordinator
     private let baseDirectoryURL: URL
     private let subject = PassthroughSubject<Event, Never>()
+    private let sessionSubject = PassthroughSubject<SessionLifecycleEvent, Never>()
 
     /// Designated initializer.
     /// - Parameters:
@@ -271,11 +279,19 @@ public final class EventRecorder: @unchecked Sendable {
     // MARK: - Session API
     @discardableResult
     public func startSession(userID: String? = nil, metadata: [String: EventValue]? = nil) async -> EventSession {
-        await coordinator.startSession(userID: userID, metadata: metadata)
+        let session = await coordinator.startSession(userID: userID, metadata: metadata)
+        await MainActor.run {
+            sessionSubject.send(.started(session: session))
+        }
+        return session
     }
 
     public func endSession() async {
+        let session = await coordinator.currentSessionInfo()
         await coordinator.endSession()
+        await MainActor.run {
+            sessionSubject.send(.ended(session: session))
+        }
     }
 
     public func currentSession() async -> EventSession? {
@@ -285,7 +301,17 @@ public final class EventRecorder: @unchecked Sendable {
     // MARK: - Event API
     public func record(_ name: String, properties: [String: EventValue]? = nil) {
         Task {
-            if let event = await coordinator.record(name: name, properties: properties) {
+            let (event, autoStartedSession) = await coordinator.record(name: name, properties: properties)
+            
+            // If a session was auto-started, publish the lifecycle event
+            if let session = autoStartedSession {
+                await MainActor.run {
+                    sessionSubject.send(.started(session: session))
+                }
+            }
+            
+            // Publish the event
+            if let event = event {
                 subject.send(event)
             }
         }
@@ -305,6 +331,23 @@ public final class EventRecorder: @unchecked Sendable {
 
     // MARK: - Event stream
     public var eventsPublisher: AnyPublisher<Event, Never> { subject.eraseToAnyPublisher() }
+    
+    /// Publisher for session lifecycle events (started, ended)
+    public var sessionPublisher: AnyPublisher<SessionLifecycleEvent, Never> { sessionSubject.eraseToAnyPublisher() }
+    
+    /// Check if there are any scheduled surveys for a user
+    public func hasScheduledSurveys(for userId: String?) async -> Bool {
+        let store = ScheduledSurveyStore(baseDirectory: storageBaseDirectoryURL)
+        let triggered = await store.getAllTriggeredSurveys(for: userId)
+        let pending = await store.getAllPendingSurveys(for: userId)
+        return !triggered.isEmpty || !pending.isEmpty
+    }
+    
+    /// Clean up old scheduled surveys
+    public func cleanupOldScheduledSurveys(olderThan seconds: TimeInterval = 86400) async {
+        let store = ScheduledSurveyStore(baseDirectory: storageBaseDirectoryURL)
+        await store.cleanupOldScheduled(olderThan: seconds)
+    }
 
     // MARK: - Storage & Analytics helpers
     public var storageBaseDirectoryURL: URL { baseDirectoryURL }
@@ -312,4 +355,5 @@ public final class EventRecorder: @unchecked Sendable {
     public func listAllSessions() async -> [EventSession] { await coordinator.listAllSessions() }
     public func listSessions(forUserID userId: String?) async -> [EventSession] { await coordinator.listSessions(forUserID: userId) }
     public func events(forSessionID id: UUID) async -> [Event] { await coordinator.events(forSessionID: id) }
+    
 }

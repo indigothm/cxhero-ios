@@ -105,15 +105,22 @@ func scheduledTasksCancelledOnSessionChange() async throws {
     // Wait a bit but not long enough for survey to show
     try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
     
-    // Start new session (should cancel scheduled task)
+    // Verify survey is not yet presented
+    #expect(model.isPresented == false)
+    
+    // Start new session (scheduled task will be cancelled, but restoration will re-schedule)
     await recorder.endSession()
     _ = await recorder.startSession(userID: "user-session", metadata: nil)
     
-    // Wait past original delay
-    try await Task.sleep(nanoseconds: 2_000_000_000) // 2 more seconds
+    // Wait for restoration to re-schedule the survey with remaining delay
+    try await Task.sleep(nanoseconds: 300_000_000) // 0.3s for restoration
     
-    // Survey should not be presented because task was cancelled
-    #expect(model.isPresented == false)
+    // Wait for the re-scheduled survey to show (remaining ~1.5s)
+    try await Task.sleep(nanoseconds: 2_000_000_000) // 2s
+    
+    // Survey SHOULD now be presented because it was restored and re-scheduled
+    // (The old behavior was to cancel, but the new restoration logic re-schedules)
+    #expect(model.isPresented == true)
 }
 
 @MainActor

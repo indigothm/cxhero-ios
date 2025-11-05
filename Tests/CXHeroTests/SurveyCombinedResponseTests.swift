@@ -163,11 +163,3 @@ func combinedResponseTriggersCorrectly() async throws {
     #expect(model.isPresented == true)
     #expect(model.activeRule?.ruleId == "combined-test")
 }
-
-struct TestError: Error {
-    let message: String
-    init(_ message: String) {
-        self.message = message
-    }
-}
-

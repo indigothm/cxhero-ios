@@ -12,6 +12,7 @@ final class SurveyTriggerViewModel: ObservableObject {
 
     private var configCancellable: AnyCancellable?
     private var eventCancellable: AnyCancellable?
+    private var sessionCancellable: AnyCancellable?
     private var shownThisSession: Set<String> = []
     private var lastSessionId: UUID?
     private var gating: SurveyGatingStore?
@@ -20,15 +21,16 @@ final class SurveyTriggerViewModel: ObservableObject {
     private let recorder: EventRecorder
     private var scheduledTasks: [String: Task<Void, Never>] = [:]
     
-    /// When true, bypasses all gating rules (completion tracking, attempt limits, cooldowns) for testing
-    var debugModeEnabled: Bool = false
+    /// Debug configuration for testing
+    var debugConfig: SurveyDebugConfig = .production
 
     /// When true, enables local notification scheduling for delayed surveys
     var notificationsEnabled: Bool = false
 
-    init(config: SurveyConfig, recorder: EventRecorder = .shared, debugModeEnabled: Bool = false, notificationsEnabled: Bool = false) {
-        self.config = config
-        self.debugModeEnabled = debugModeEnabled
+    init(config: SurveyConfig, recorder: EventRecorder = .shared, debugConfig: SurveyDebugConfig = .production, notificationsEnabled: Bool = false) {
+        // Apply debug overrides to config
+        self.config = debugConfig.apply(to: config)
+        self.debugConfig = debugConfig
         self.notificationsEnabled = notificationsEnabled
         self.recorder = recorder
         // Initialize gating before subscribing to events to enforce safeguards from first event
@@ -40,10 +42,11 @@ final class SurveyTriggerViewModel: ObservableObject {
         subscribeToEvents()
     }
 
-    init(configPublisher: AnyPublisher<SurveyConfig, Never>, initial: SurveyConfig, recorder: EventRecorder = .shared, debugModeEnabled: Bool = false, notificationsEnabled: Bool = false) {
-        self.config = initial
+    init(configPublisher: AnyPublisher<SurveyConfig, Never>, initial: SurveyConfig, recorder: EventRecorder = .shared, debugConfig: SurveyDebugConfig = .production, notificationsEnabled: Bool = false) {
+        // Apply debug overrides to initial config
+        self.config = debugConfig.apply(to: initial)
         self.recorder = recorder
-        self.debugModeEnabled = debugModeEnabled
+        self.debugConfig = debugConfig
         self.notificationsEnabled = notificationsEnabled
         self.gating = SurveyGatingStore(baseDirectory: recorder.storageBaseDirectoryURL)
         self.scheduledStore = ScheduledSurveyStore(baseDirectory: recorder.storageBaseDirectoryURL)
@@ -52,7 +55,11 @@ final class SurveyTriggerViewModel: ObservableObject {
         }
         self.configCancellable = configPublisher
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] cfg in self?.config = cfg }
+            .sink { [weak self] cfg in 
+                // Apply debug overrides when config updates
+                guard let self = self else { return }
+                self.config = self.debugConfig.apply(to: cfg)
+            }
         subscribeToEvents()
     }
 
@@ -75,8 +82,8 @@ final class SurveyTriggerViewModel: ObservableObject {
             lastSessionId = event.sessionId
         }
         for rule in config.surveys {
-            // In debug mode, skip all gating checks
-            if !debugModeEnabled {
+            // In debug mode with gating bypass, skip all gating checks
+            if !debugConfig.bypassGating {
             if rule.oncePerSession ?? true {
                 if shownThisSession.contains(rule.ruleId) { continue }
                 }
@@ -84,8 +91,8 @@ final class SurveyTriggerViewModel: ObservableObject {
             
             if !matches(rule.trigger, event: event) { continue }
             
-            // In debug mode, skip gating checks (completion, attempts, cooldowns)
-            if !debugModeEnabled {
+            // In debug mode with gating bypass, skip gating checks (completion, attempts, cooldowns)
+            if !debugConfig.bypassGating {
             if let gating = gating {
                     let allow = await gating.canShow(
                         ruleId: rule.ruleId,
@@ -182,8 +189,8 @@ final class SurveyTriggerViewModel: ObservableObject {
             sheetHandledAnalytics = false
         }
         
-        // In debug mode, skip tracking shown state
-        if !debugModeEnabled {
+        // In debug mode with gating bypass, skip tracking shown state
+        if !debugConfig.bypassGating {
             if rule.oncePerSession ?? true { 
                 await MainActor.run {
                     shownThisSession.insert(rule.ruleId)
@@ -192,11 +199,11 @@ final class SurveyTriggerViewModel: ObservableObject {
             if let gating = gating { await gating.markShown(ruleId: rule.ruleId, forUser: userId) }
         }
         
-        recorder.record("survey_presented", properties: [
-            "id": .string(rule.ruleId),
+            recorder.record("survey_presented", properties: [
+                "id": .string(rule.ruleId),
             "responseType": .string(rule.response.analyticsType),
-            "debugMode": .bool(debugModeEnabled)
-        ])
+            "debugMode": .bool(debugConfig.enabled)
+            ])
     }
 
     private func matches(_ trigger: TriggerCondition, event: Event) -> Bool {
@@ -228,17 +235,23 @@ final class SurveyTriggerViewModel: ObservableObject {
                 self?.handle(event: event)
             }
         
-        // Listen for session start to restore pending surveys
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("cxHeroSessionStarted"),
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { [weak self] in
-                print("[CXHero] 🔔 Session started - restoring pending surveys")
-                await self?.restorePendingScheduledSurveys()
+        // Subscribe to session lifecycle events
+        self.sessionCancellable = recorder.sessionPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] event in
+                switch event {
+                case .started(let session):
+                    // Only restore if this is a different session than we've seen
+                    // (Prevents re-restoration on auto-start of same session we already processed)
+                    guard let self = self, session.id != self.lastSessionId else { return }
+                    print("[CXHero] 🔔 Session started - restoring pending surveys")
+                    Task { [weak self] in
+                        await self?.restorePendingScheduledSurveys()
+                    }
+                case .ended:
+                    break
+                }
             }
-        }
         
         Task { [weak self] in
             let session = await self?.recorder.currentSession()
@@ -462,15 +475,29 @@ public struct SurveyTriggerView<Content: View>: View {
     private let recorder: EventRecorder
     private let onNotificationTap: ((String, String) -> Void)?
 
-    public init(config: SurveyConfig, recorder: EventRecorder = .shared, debugModeEnabled: Bool = false, notificationsEnabled: Bool = false, onNotificationTap: ((String, String) -> Void)? = nil, @ViewBuilder content: @escaping () -> Content) {
-        _model = StateObject(wrappedValue: SurveyTriggerViewModel(config: config, recorder: recorder, debugModeEnabled: debugModeEnabled, notificationsEnabled: notificationsEnabled))
+    @Environment(\.scenePhase) private var scenePhase
+
+    public init(config: SurveyConfig, recorder: EventRecorder = .shared, debugConfig: SurveyDebugConfig = .production, notificationsEnabled: Bool = false, onNotificationTap: ((String, String) -> Void)? = nil, @ViewBuilder content: @escaping () -> Content) {
+        let viewModel = SurveyTriggerViewModel(config: config, recorder: recorder, debugConfig: debugConfig, notificationsEnabled: notificationsEnabled)
+        _model = StateObject(wrappedValue: viewModel)
         self.recorder = recorder
         self.onNotificationTap = onNotificationTap
         self.content = content
     }
 
-    public init(manager: SurveyConfigManager, recorder: EventRecorder = .shared, debugModeEnabled: Bool = false, notificationsEnabled: Bool = false, onNotificationTap: ((String, String) -> Void)? = nil, @ViewBuilder content: @escaping () -> Content) {
-        _model = StateObject(wrappedValue: SurveyTriggerViewModel(configPublisher: manager.configPublisher, initial: manager.currentConfig, recorder: recorder, debugModeEnabled: debugModeEnabled, notificationsEnabled: notificationsEnabled))
+    public init(manager: SurveyConfigManager, recorder: EventRecorder = .shared, debugConfig: SurveyDebugConfig = .production, notificationsEnabled: Bool = false, onNotificationTap: ((String, String) -> Void)? = nil, @ViewBuilder content: @escaping () -> Content) {
+        let viewModel = SurveyTriggerViewModel(configPublisher: manager.configPublisher, initial: manager.currentConfig, recorder: recorder, debugConfig: debugConfig, notificationsEnabled: notificationsEnabled)
+        _model = StateObject(wrappedValue: viewModel)
+        self.recorder = recorder
+        self.onNotificationTap = onNotificationTap
+        self.content = content
+    }
+    
+    // DEPRECATED: Legacy init for backwards compatibility
+    public init(config: SurveyConfig, recorder: EventRecorder = .shared, debugModeEnabled: Bool = false, notificationsEnabled: Bool = false, onNotificationTap: ((String, String) -> Void)? = nil, @ViewBuilder content: @escaping () -> Content) {
+        let debugConfig = debugModeEnabled ? SurveyDebugConfig.debug : SurveyDebugConfig.production
+        let viewModel = SurveyTriggerViewModel(config: config, recorder: recorder, debugConfig: debugConfig, notificationsEnabled: notificationsEnabled)
+        _model = StateObject(wrappedValue: viewModel)
         self.recorder = recorder
         self.onNotificationTap = onNotificationTap
         self.content = content
@@ -535,6 +562,14 @@ public struct SurveyTriggerView<Content: View>: View {
                     )
                 } else {
                     EmptyView()
+                }
+            }
+            .onChange(of: scenePhase) { _ in
+                if scenePhase == .active {
+                    // Check for pending surveys when app becomes active
+                    Task {
+                        await model.checkAndPresentPendingSurveys()
+                    }
                 }
             }
     }
@@ -1004,4 +1039,29 @@ public extension SurveyConfig {
         let data = try Data(contentsOf: url)
         return try from(data: data)
     }
+    
+    /// Load survey config from app bundle with optional debug overrides
+    static func loadFromBundle(
+        resourceName: String,
+        bundle: Bundle = .main,
+        debugConfig: SurveyDebugConfig = .production
+    ) throws -> SurveyConfig {
+        guard let url = bundle.url(forResource: resourceName, withExtension: "json") else {
+            throw ConfigError.fileNotFound(resourceName)
+        }
+        
+        var config = try from(url: url)
+        
+        // Apply debug overrides if enabled
+        if debugConfig.enabled {
+            config = debugConfig.apply(to: config)
+        }
+        
+        return config
+    }
 }
+
+public enum ConfigError: Error {
+    case fileNotFound(String)
+}
+
