@@ -474,21 +474,24 @@ public struct SurveyTriggerView<Content: View>: View {
     private let content: () -> Content
     private let recorder: EventRecorder
     private let onNotificationTap: ((String, String) -> Void)?
-
+    private let accentColor: Color?
+    
     @Environment(\.scenePhase) private var scenePhase
 
-    public init(config: SurveyConfig, recorder: EventRecorder = .shared, debugConfig: SurveyDebugConfig = .production, notificationsEnabled: Bool = false, onNotificationTap: ((String, String) -> Void)? = nil, @ViewBuilder content: @escaping () -> Content) {
+    public init(config: SurveyConfig, recorder: EventRecorder = .shared, debugConfig: SurveyDebugConfig = .production, notificationsEnabled: Bool = false, accentColor: Color? = nil, onNotificationTap: ((String, String) -> Void)? = nil, @ViewBuilder content: @escaping () -> Content) {
         let viewModel = SurveyTriggerViewModel(config: config, recorder: recorder, debugConfig: debugConfig, notificationsEnabled: notificationsEnabled)
         _model = StateObject(wrappedValue: viewModel)
         self.recorder = recorder
+        self.accentColor = accentColor
         self.onNotificationTap = onNotificationTap
         self.content = content
     }
 
-    public init(manager: SurveyConfigManager, recorder: EventRecorder = .shared, debugConfig: SurveyDebugConfig = .production, notificationsEnabled: Bool = false, onNotificationTap: ((String, String) -> Void)? = nil, @ViewBuilder content: @escaping () -> Content) {
+    public init(manager: SurveyConfigManager, recorder: EventRecorder = .shared, debugConfig: SurveyDebugConfig = .production, notificationsEnabled: Bool = false, accentColor: Color? = nil, onNotificationTap: ((String, String) -> Void)? = nil, @ViewBuilder content: @escaping () -> Content) {
         let viewModel = SurveyTriggerViewModel(configPublisher: manager.configPublisher, initial: manager.currentConfig, recorder: recorder, debugConfig: debugConfig, notificationsEnabled: notificationsEnabled)
         _model = StateObject(wrappedValue: viewModel)
         self.recorder = recorder
+        self.accentColor = accentColor
         self.onNotificationTap = onNotificationTap
         self.content = content
     }
@@ -499,6 +502,7 @@ public struct SurveyTriggerView<Content: View>: View {
         let viewModel = SurveyTriggerViewModel(config: config, recorder: recorder, debugConfig: debugConfig, notificationsEnabled: notificationsEnabled)
         _model = StateObject(wrappedValue: viewModel)
         self.recorder = recorder
+        self.accentColor = nil
         self.onNotificationTap = onNotificationTap
         self.content = content
     }
@@ -531,6 +535,7 @@ public struct SurveyTriggerView<Content: View>: View {
                 if let rule = model.activeRule {
                     SurveySheet(
                         rule: rule,
+                        accentColor: accentColor,
                         onSubmitOption: { option in
                             recorder.record("survey_response", properties: [
                                 "id": .string(rule.ruleId),
@@ -578,6 +583,7 @@ public struct SurveyTriggerView<Content: View>: View {
 @available(iOS 14.0, macOS 12.0, tvOS 14.0, watchOS 8.0, *)
 struct SurveySheet: View {
     let rule: SurveyRule
+    let accentColor: Color?
     let onSubmitOption: (String) -> Void
     let onSubmitText: (String) -> Void
     let onClose: () -> Void
@@ -586,33 +592,36 @@ struct SurveySheet: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                // Close button at the top
-                HStack {
-                    Spacer()
-                    Button(action: onClose) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.secondary)
-                            .padding(8)
-                            .background(Circle().fill(Color.secondary.opacity(0.1)))
-                    }
+        VStack(spacing: 0) {
+            // Close button at the top
+            HStack {
+                Spacer()
+                Button(action: {
+                    dismissKeyboard()
+                    onClose()
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .padding(8)
+                        .background(Circle().fill(Color.secondary.opacity(0.1)))
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
-                
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            
+            ScrollView {
                 VStack(spacing: 24) {
                     // Header section
                     VStack(spacing: 12) {
-            Text(rule.title)
+                        Text(rule.title)
                             .font(.system(size: 24, weight: .bold))
                             .multilineTextAlignment(.center)
                             .foregroundColor(.primary)
                         
-            Text(rule.message)
+                        Text(rule.message)
                             .font(.system(size: 16))
-                .multilineTextAlignment(.center)
+                            .multilineTextAlignment(.center)
                             .foregroundColor(.secondary)
                             .lineSpacing(4)
                     }
@@ -620,20 +629,98 @@ struct SurveySheet: View {
                     .padding(.top, 8)
                     
                     // Content
-            content
+                    content
                         .padding(.horizontal, 24)
-        }
-                .padding(.bottom, 32)
+                }
+                .padding(.bottom, hasSubmitButton ? 100 : 32) // Extra padding for submit button
+            }
+            
+            // Submit button pinned to bottom (if applicable)
+            if hasSubmitButton {
+                VStack(spacing: 0) {
+                    Divider()
+                    submitButtonSection
+                        .padding(.horizontal, 24)
+                        .padding(.top, 16)
+                        .padding(.bottom, 8)
+                        .background(backgroundColor)
+                }
             }
         }
         .background(backgroundColor)
         .onAppear { 
             textResponse = ""
             selectedOption = nil
+            dismissKeyboard()
         }
         .onChange(of: rule.id) { _ in 
             textResponse = ""
             selectedOption = nil
+            dismissKeyboard()
+        }
+        .onTapGesture {
+            // Dismiss keyboard when tapping outside
+            dismissKeyboard()
+        }
+    }
+    
+    private func dismissKeyboard() {
+        #if os(iOS)
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        #endif
+    }
+    
+    // Whether this survey type has a submit button (combined/text) vs immediate submit (options)
+    private var hasSubmitButton: Bool {
+        switch rule.response {
+        case .options: return false
+        case .text, .combined: return true
+        }
+    }
+    
+    @ViewBuilder
+    private var submitButtonSection: some View {
+        switch rule.response {
+        case .combined(let config):
+            Button(action: {
+                dismissKeyboard()
+                submitCombinedResponse(config: config)
+            }) {
+                Text(config.submitLabel ?? "Submit Feedback")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(canSubmitCombined(config: config) ? 
+                                (accentColor ?? Color.accentColor) : 
+                                Color.secondary.opacity(0.3))
+                    )
+            }
+            .disabled(!canSubmitCombined(config: config))
+            
+        case .text(let config):
+            Button(action: {
+                dismissKeyboard()
+                onSubmitText(trimmedText(config: config))
+            }) {
+                Text(config.submitLabel ?? "Submit Feedback")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(canSubmit(config: config) ? 
+                                (accentColor ?? Color.accentColor) : 
+                                Color.secondary.opacity(0.3))
+                    )
+            }
+            .disabled(!canSubmit(config: config))
+            
+        case .options:
+            EmptyView()
         }
     }
     
@@ -652,9 +739,13 @@ struct SurveySheet: View {
                         ForEach(Array(options.enumerated()), id: \.offset) { index, option in
                             RatingButton(
                                 label: option,
+                                accentColor: accentColor,
                                 isFirst: index == 0,
                                 isLast: index == options.count - 1,
-                                action: { onSubmitOption(option) }
+                                action: { 
+                                    dismissKeyboard()
+                                    onSubmitOption(option)
+                                }
                             )
                         }
                     }
@@ -676,8 +767,12 @@ struct SurveySheet: View {
                         ForEach(Array(config.options.enumerated()), id: \.offset) { index, option in
                             SelectableRatingButton(
                                 label: option,
+                                accentColor: accentColor,
                                 isSelected: selectedOption == option,
-                                action: { selectedOption = option }
+                                action: { 
+                                    dismissKeyboard()
+                                    selectedOption = option
+                                }
                             )
                         }
                     }
@@ -726,24 +821,6 @@ struct SurveySheet: View {
                         }
                     }
                 }
-                
-                // Submit button
-                Button(action: {
-                    submitCombinedResponse(config: config)
-                }) {
-                    Text(config.submitLabel ?? "Submit Feedback")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 52)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(canSubmitCombined(config: config) ? 
-                                    Color.accentColor : 
-                                    Color.secondary.opacity(0.3))
-                        )
-                }
-                .disabled(!canSubmitCombined(config: config))
             }
             .onChange(of: textResponse) { newValue in
                 if let max = config.textField?.maxLength, newValue.count > max {
@@ -788,24 +865,6 @@ struct SurveySheet: View {
                         }
                     }
                 }
-                
-                // Submit button
-                Button(action: {
-                    onSubmitText(trimmedText(config: config))
-                }) {
-                    Text(config.submitLabel ?? "Submit Feedback")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 52)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(canSubmit(config: config) ? 
-                                    Color.accentColor : 
-                                    Color.secondary.opacity(0.3))
-                        )
-                }
-                .disabled(!canSubmit(config: config))
             }
             .onChange(of: textResponse) { newValue in
                 if let max = config.maxLength, newValue.count > max {
@@ -870,6 +929,7 @@ struct SurveySheet: View {
 @available(iOS 14.0, macOS 12.0, tvOS 14.0, watchOS 8.0, *)
 private struct RatingButton: View {
     let label: String
+    let accentColor: Color?
     let isFirst: Bool
     let isLast: Bool
     let action: () -> Void
@@ -937,6 +997,7 @@ private struct RatingButton: View {
 @available(iOS 14.0, macOS 12.0, tvOS 14.0, watchOS 8.0, *)
 private struct SelectableRatingButton: View {
     let label: String
+    let accentColor: Color?
     let isSelected: Bool
     let action: () -> Void
     @Environment(\.colorScheme) private var colorScheme
@@ -958,7 +1019,7 @@ private struct SelectableRatingButton: View {
             .frame(height: 90)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(isSelected ? Color.accentColor : (colorScheme == .dark ? Color(white: 0.18) : Color.white))
+                    .fill(isSelected ? (accentColor ?? Color.accentColor) : (colorScheme == .dark ? Color(white: 0.18) : Color.white))
                     .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.08), 
                             radius: isSelected ? 12 : 8, x: 0, y: isSelected ? 4 : 2)
             )

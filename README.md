@@ -6,15 +6,20 @@ Lightweight event tracking for Apple platforms with per-session and optional use
 - Singleton API: `EventRecorder.shared`
 - Sessions with optional `userId` and session metadata
 - Durable local storage using JSON Lines per session
+- **Automatic Data Retention** - Configurable cleanup prevents storage bloat (30 days / 50 sessions default)
 - Primitive properties with type-safe encoding
 - Async-safe writes via actors
+- **Session Lifecycle Publishers** - Automatic coordination via Combine publishers
 - **Modern, Polished Survey UI** - Professional, brand-agnostic design with emoji rating buttons
 - **Light/Dark Mode Support** - Automatically adapts to system appearance
+- **ScenePhase Integration** - Automatic survey restoration on app foreground
+- **Cross-Session Persistence** - Surveys scheduled in one session show in the next (app restarts)
 - SwiftUI micro-survey trigger view driven by JSON config
 - **Multi-Question Surveys** - Combined response type supports rating + optional text in one sheet
 - Supports button-choice, free-text, or combined (rating + text) feedback surveys
 - Smart emoji mapping for rating labels (Poor 😞, Fair 😐, Good 🙂, Great 😊, Excellent 🤩)
 - **Explicit Submit Button** - Combined surveys require user to tap submit (no accidental taps)
+- **Debug Configuration** - Presets for production (.production) and testing (.debug)
 - Once-per-user gating and cooldowns
 - **Scheduled/Delayed Triggers** - Show surveys after a delay (e.g., 70 minutes after check-in)
 - **Attempt Tracking** - Track how many times a survey was shown but not completed
@@ -42,14 +47,18 @@ dependencies: [
 - Add the package and import `CXHero`.
 
 Code
-```
+```swift
 import CXHero
+
+// EventRecorder.shared uses .standard retention policy by default
+// (30 days, 50 sessions per user, automatic cleanup)
 
 // Start an event session (optional userId + metadata)
 let session = await EventRecorder.shared.startSession(userID: "user-123", metadata: [
     "plan": .string("pro"),
     "ab": .string("variantA")
 ])
+// ↑ Automatic cleanup runs here (removes sessions > 30 days or beyond 50 per user)
 
 // Record events scoped to the current session
 EventRecorder.shared.record("button_tap", properties: [
@@ -65,8 +74,29 @@ let allEvents = await EventRecorder.shared.allEvents()
 // End session (optional)
 await EventRecorder.shared.endSession()
 
+// Manual cleanup (if needed)
+await EventRecorder.shared.applyRetentionPolicy()
+
 // Clear all stored data
 await EventRecorder.shared.clear()
+```
+
+### Custom Retention Policy
+
+```swift
+// Option 1: Use a preset
+let recorder = EventRecorder(retentionPolicy: .conservative) // 90 days, 100 sessions
+
+// Option 2: Custom policy
+let custom = RetentionPolicy(
+    maxAge: 60 * 24 * 3600,  // 60 days
+    maxSessionsPerUser: 75,
+    automaticCleanupEnabled: true
+)
+let recorder = EventRecorder(retentionPolicy: custom)
+
+// Option 3: Disable retention (for testing)
+let recorder = EventRecorder(retentionPolicy: .none)
 ```
 
 ## SwiftUI Micro Survey

@@ -75,12 +75,14 @@ actor SessionCoordinator {
     private let baseDirectory: URL
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
+    private let retentionPolicy: RetentionPolicy
 
     private var currentSession: EventSession?
     private var currentStore: EventStore?
 
-    init(baseDirectory: URL) {
+    init(baseDirectory: URL, retentionPolicy: RetentionPolicy = .standard) {
         self.baseDirectory = baseDirectory
+        self.retentionPolicy = retentionPolicy
         self.encoder = JSONEncoder()
         self.decoder = JSONDecoder()
         self.encoder.dateEncodingStrategy = .iso8601
@@ -88,6 +90,11 @@ actor SessionCoordinator {
     }
 
     func startSession(userID: String?, metadata: [String: EventValue]?) async -> EventSession {
+        // Run automatic cleanup if enabled
+        if retentionPolicy.automaticCleanupEnabled {
+            await applyRetentionPolicy()
+        }
+        
         let session = EventSession(userId: userID, metadata: metadata)
         let dirs = paths(for: session)
 
@@ -232,12 +239,85 @@ actor SessionCoordinator {
         return Paths(sessionDir: sessionDir, eventsURL: eventsURL, sessionMetaURL: sessionMetaURL)
     }
 
-    private func safeUserFolder(for userId: String?) -> String {
+    fileprivate func safeUserFolder(for userId: String?) -> String {
         guard let userId, !userId.isEmpty else { return "anon" }
         // Restrict to a safe subset for filesystem names
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_@."))
         let cleaned = userId.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }.reduce(into: "", { $0.append($1) })
         return cleaned
+    }
+    
+    // MARK: - Retention Policy
+    
+    /// Apply retention policy by cleaning up old sessions and events
+    func applyRetentionPolicy() async {
+        let fm = FileManager.default
+        let usersURL = baseDirectory.appendingPathComponent("users")
+        
+        guard let userDirs = try? fm.contentsOfDirectory(
+            at: usersURL,
+            includingPropertiesForKeys: [.creationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        
+        for userDir in userDirs {
+            let sessionsURL = userDir.appendingPathComponent("sessions")
+            await cleanupUserSessions(at: sessionsURL)
+        }
+    }
+    
+    private func cleanupUserSessions(at sessionsURL: URL) async {
+        let fm = FileManager.default
+        
+        guard let sessionDirs = try? fm.contentsOfDirectory(
+            at: sessionsURL,
+            includingPropertiesForKeys: [.creationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        
+        var sessions: [(url: URL, session: EventSession)] = []
+        let currentSessionId = currentSession?.id
+        
+        // Load all session metadata
+        for sessionDir in sessionDirs {
+            let metaURL = sessionDir.appendingPathComponent("session.json")
+            guard let data = try? Data(contentsOf: metaURL),
+                  let session = try? decoder.decode(EventSession.self, from: data) else {
+                continue
+            }
+            sessions.append((url: sessionDir, session: session))
+        }
+        
+        // Apply age-based retention
+        if let maxAge = retentionPolicy.maxAge {
+            let cutoffDate = Date().addingTimeInterval(-maxAge)
+            for (url, session) in sessions {
+                // Don't delete current session
+                if session.id == currentSessionId { continue }
+                
+                if session.startedAt < cutoffDate {
+                    try? fm.removeItem(at: url)
+                }
+            }
+            
+            // Remove deleted sessions from array
+            sessions.removeAll { (url, session) in
+                session.startedAt < cutoffDate
+            }
+        }
+        
+        // Apply count-based retention (keep newest N sessions)
+        if let maxCount = retentionPolicy.maxSessionsPerUser, sessions.count > maxCount {
+            // Sort by start date (newest first)
+            let sorted = sessions.sorted { $0.session.startedAt > $1.session.startedAt }
+            
+            // Delete sessions beyond the limit (but never delete current session)
+            for i in maxCount..<sorted.count {
+                // Skip current session
+                if sorted[i].session.id == currentSessionId { continue }
+                try? fm.removeItem(at: sorted[i].url)
+            }
+        }
     }
 }
 
@@ -255,11 +335,15 @@ public final class EventRecorder: @unchecked Sendable {
     private let baseDirectoryURL: URL
     private let subject = PassthroughSubject<Event, Never>()
     private let sessionSubject = PassthroughSubject<SessionLifecycleEvent, Never>()
+    
+    /// Current retention policy
+    public let retentionPolicy: RetentionPolicy
 
     /// Designated initializer.
     /// - Parameters:
     ///   - directory: Base directory to store user/session-scoped data. Defaults to the app's Documents/CXHero directory.
-    public init(directory: URL? = nil) {
+    ///   - retentionPolicy: Policy for automatic cleanup of old data. Defaults to `.standard` (30 days, 50 sessions).
+    public init(directory: URL? = nil, retentionPolicy: RetentionPolicy = .standard) {
         let base: URL
         if let directory {
             base = directory
@@ -273,7 +357,8 @@ public final class EventRecorder: @unchecked Sendable {
             #endif
         }
         self.baseDirectoryURL = base
-        self.coordinator = SessionCoordinator(baseDirectory: base)
+        self.retentionPolicy = retentionPolicy
+        self.coordinator = SessionCoordinator(baseDirectory: base, retentionPolicy: retentionPolicy)
     }
 
     // MARK: - Session API
@@ -347,6 +432,11 @@ public final class EventRecorder: @unchecked Sendable {
     public func cleanupOldScheduledSurveys(olderThan seconds: TimeInterval = 86400) async {
         let store = ScheduledSurveyStore(baseDirectory: storageBaseDirectoryURL)
         await store.cleanupOldScheduled(olderThan: seconds)
+    }
+    
+    /// Manually apply retention policy to clean up old sessions and events
+    public func applyRetentionPolicy() async {
+        await coordinator.applyRetentionPolicy()
     }
 
     // MARK: - Storage & Analytics helpers
