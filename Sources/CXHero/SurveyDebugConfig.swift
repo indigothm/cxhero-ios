@@ -5,7 +5,7 @@ public struct SurveyDebugConfig: Sendable {
     /// Enable debug mode (bypasses gating, modifies delays)
     public let enabled: Bool
     
-    /// Override all survey scheduleAfterSeconds delays (e.g., 10 seconds for testing)
+    /// Override all survey scheduleAfterSeconds delays (e.g., 60 seconds for testing)
     public let overrideScheduleDelay: TimeInterval?
     
     /// Override all attemptCooldownSeconds (e.g., 15 seconds for testing)
@@ -37,7 +37,7 @@ public struct SurveyDebugConfig: Sendable {
     /// Debug configuration - fast delays, bypassed gating
     public static nonisolated(unsafe) let debug = SurveyDebugConfig(
         enabled: true,
-        overrideScheduleDelay: 10,  // 10 seconds instead of production timing
+        overrideScheduleDelay: 60,  // 60 seconds instead of production timing
         overrideAttemptCooldown: 15,  // 15 seconds instead of 24 hours
         bypassGating: true  // Show every time, ignore completion/attempts
     )

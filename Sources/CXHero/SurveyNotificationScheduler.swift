@@ -60,6 +60,15 @@ public actor SurveyNotificationScheduler {
         )
         
         let identifier = notificationIdentifier(ruleId: ruleId, sessionId: sessionId)
+        
+        // Deduplicate: if we already have a pending request with the same identifier, don't re-add.
+        // This protects against accidental double subscription/initialisation in host apps.
+        let pending = await notificationCenter.pendingNotificationRequests()
+        if pending.contains(where: { $0.identifier == identifier }) {
+            print("[CXHero-Notification] ℹ️ Notification already scheduled for '\(ruleId)' (\(identifier)) - skipping")
+            return
+        }
+        
         let request = UNNotificationRequest(
             identifier: identifier,
             content: content,

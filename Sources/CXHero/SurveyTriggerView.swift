@@ -110,7 +110,7 @@ final class SurveyTriggerViewModel: ObservableObject {
             if case .event(let eventTrigger) = rule.trigger,
                let delaySeconds = eventTrigger.scheduleAfterSeconds, delaySeconds > 0 {
                 // Schedule the survey to show after delay
-                scheduleDelayedSurvey(rule: rule, userId: event.userId, delaySeconds: delaySeconds)
+                await scheduleDelayedSurvey(rule: rule, userId: event.userId, delaySeconds: delaySeconds)
             } else {
                 // Show immediately
                 await showSurvey(rule: rule, userId: event.userId)
@@ -119,65 +119,78 @@ final class SurveyTriggerViewModel: ObservableObject {
         }
     }
     
-    private func scheduleDelayedSurvey(rule: SurveyRule, userId: String?, delaySeconds: TimeInterval) {
+    private func scheduleDelayedSurvey(rule: SurveyRule, userId: String?, delaySeconds: TimeInterval) async {
         // Cancel any existing scheduled task for this rule
         scheduledTasks[rule.ruleId]?.cancel()
         
-        // Persist the schedule and schedule notification
-        Task {
-            let session = await recorder.currentSession()
-            guard let sessionId = session?.id else { return }
+        // We need a session to associate the schedule with.
+        let session = await recorder.currentSession()
+        guard let sessionId = session?.id else { return }
+        
+        // Deduplicate: if this rule is already pending for this session, do nothing.
+        // This prevents double scheduling when the host app accidentally ends up with
+        // multiple active trigger models/subscriptions.
+        if let store = scheduledStore {
+            let alreadyPending = await store
+                .getPendingSurveys(for: userId, sessionId: sessionId.uuidString)
+                .contains(where: { $0.id == rule.ruleId })
             
-            if let store = scheduledStore {
-                await store.scheduleForLater(
-                    ruleId: rule.ruleId,
-                    userId: userId,
-                    sessionId: sessionId.uuidString,
-                    delaySeconds: delaySeconds
-                )
+            if alreadyPending {
+                print("[CXHero] ℹ️ Survey '\(rule.ruleId)' already scheduled for this session - skipping")
+                return
             }
             
-            // Schedule local notification if enabled and configured
-            if notificationsEnabled {
-                if let notificationConfig = rule.notification {
-                    if let scheduler = notificationScheduler {
-                        print("[CXHero] 📬 Scheduling notification for '\(rule.ruleId)' in \(delaySeconds)s")
-                        await scheduler.schedule(
-                            ruleId: rule.ruleId,
-                            sessionId: sessionId.uuidString,
-                            notificationConfig: notificationConfig,
-                            triggerAfterSeconds: delaySeconds
-                        )
-                    } else {
-                        print("[CXHero] ⚠️ Notification scheduler not initialized!")
-                    }
-                } else {
-                    print("[CXHero] ℹ️ No notification config for survey '\(rule.ruleId)'")
-                }
-            } else {
-                print("[CXHero] ℹ️ Notifications not enabled")
-            }
+            await store.scheduleForLater(
+                ruleId: rule.ruleId,
+                userId: userId,
+                sessionId: sessionId.uuidString,
+                delaySeconds: delaySeconds
+            )
         }
         
-        let task = Task { @MainActor in
+        // Schedule local notification if enabled and configured
+        if notificationsEnabled {
+            if let notificationConfig = rule.notification {
+                if let scheduler = notificationScheduler {
+                    print("[CXHero] 📬 Scheduling notification for '\(rule.ruleId)' in \(delaySeconds)s")
+                    await scheduler.schedule(
+                        ruleId: rule.ruleId,
+                        sessionId: sessionId.uuidString,
+                        notificationConfig: notificationConfig,
+                        triggerAfterSeconds: delaySeconds
+                    )
+                } else {
+                    print("[CXHero] ⚠️ Notification scheduler not initialized!")
+                }
+            } else {
+                print("[CXHero] ℹ️ No notification config for survey '\(rule.ruleId)'")
+            }
+        } else {
+            print("[CXHero] ℹ️ Notifications not enabled")
+        }
+        
+        let task = Task { [weak self] in
             do {
                 try await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
-                await showSurvey(rule: rule, userId: userId)
+                guard let self else { return }
+                await self.showSurvey(rule: rule, userId: userId)
                 
                 // Remove from persistent store and cancel notification after showing
-                let session = await recorder.currentSession()
+                let session = await self.recorder.currentSession()
                 if let sessionId = session?.id {
-                    if let store = scheduledStore {
+                    if let store = self.scheduledStore {
                         await store.removeScheduled(ruleId: rule.ruleId, sessionId: sessionId.uuidString, userId: userId)
                     }
-                    if let scheduler = notificationScheduler {
+                    if let scheduler = self.notificationScheduler {
                         await scheduler.cancel(ruleId: rule.ruleId, sessionId: sessionId.uuidString)
                     }
                 }
             } catch {
                 // Task was cancelled
             }
-            scheduledTasks.removeValue(forKey: rule.ruleId)
+            await MainActor.run {
+                self?.scheduledTasks.removeValue(forKey: rule.ruleId)
+            }
         }
         scheduledTasks[rule.ruleId] = task
     }
@@ -254,10 +267,22 @@ final class SurveyTriggerViewModel: ObservableObject {
             }
         
         Task { [weak self] in
-            let session = await self?.recorder.currentSession()
-            self?.resetFor(session: session)
-            // Try to restore on init (will succeed if session already exists)
-            await self?.restorePendingScheduledSurveys()
+            guard let self else { return }
+            // Only attempt restoration on init if a session already exists.
+            // If there is no session yet, we'll restore when the session starts.
+            if let session = await self.recorder.currentSession() {
+                self.resetFor(session: session)
+                self.lastSessionId = session.id
+                await self.restorePendingScheduledSurveys()
+            }
+        }
+    }
+
+    deinit {
+        // Best-effort: cancel any outstanding scheduled tasks on teardown to avoid
+        // keeping the model alive accidentally and/or double-firing after view recreation.
+        for (_, task) in scheduledTasks {
+            task.cancel()
         }
     }
     

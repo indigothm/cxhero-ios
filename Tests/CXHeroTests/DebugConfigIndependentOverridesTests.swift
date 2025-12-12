@@ -54,7 +54,7 @@ func delayOverrideIndependent() throws {
     // Create debug config with ONLY delay override (no cooldown override)
     let debugConfig = SurveyDebugConfig(
         enabled: true,
-        overrideScheduleDelay: 10,  // Override delay only
+        overrideScheduleDelay: 60,  // Override delay only
         overrideAttemptCooldown: nil,  // Keep production cooldown
         bypassGating: false
     )
@@ -66,7 +66,7 @@ func delayOverrideIndependent() throws {
     guard case .event(let trigger) = result.surveys[0].trigger else {
         throw TestError("Expected event trigger")
     }
-    #expect(trigger.scheduleAfterSeconds == 10)
+    #expect(trigger.scheduleAfterSeconds == 60)
     
     // But attempt cooldown should remain unchanged
     #expect(result.surveys[0].attemptCooldownSeconds == 86400) // Original
@@ -89,7 +89,7 @@ func bothOverridesTogether() throws {
     // Create debug config with BOTH overrides
     let debugConfig = SurveyDebugConfig(
         enabled: true,
-        overrideScheduleDelay: 10,
+        overrideScheduleDelay: 60,
         overrideAttemptCooldown: 15,
         bypassGating: true
     )
@@ -101,7 +101,7 @@ func bothOverridesTogether() throws {
     guard case .event(let trigger) = result.surveys[0].trigger else {
         throw TestError("Expected event trigger")
     }
-    #expect(trigger.scheduleAfterSeconds == 10)
+    #expect(trigger.scheduleAfterSeconds == 60)
     #expect(result.surveys[0].attemptCooldownSeconds == 15)
 }
 
