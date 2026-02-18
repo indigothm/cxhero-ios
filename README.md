@@ -634,6 +634,6 @@ let events = await EventRecorder.shared.events(forSessionID: userSessions.first!
 
 ## Contributing
 - We use the Developer Certificate of Origin (DCO). Please sign your commits with `-s`.
-- By contributing, you agree to the inbound=outbound terms (your contribution is licensed under the repo’s NCL) and grant the maintainers a non‑exclusive, royalty‑free license to relicense your contribution as part of CXHero’s commercial licenses.
+- By contributing, you agree to the inbound=outbound terms and grant the maintainers a non‑exclusive, royalty‑free license to relicense your contribution as part of CXHero’s commercial licenses.
 - See `CONTRIBUTING.md` for details.
 - Minimum requirements: iOS 14, tvOS 14, macOS 12, watchOS 8.
