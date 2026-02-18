@@ -630,8 +630,7 @@ let events = await EventRecorder.shared.events(forSessionID: userSessions.first!
 ```
 
 ## License
-- Non‑Commercial License (NCL) v1.0. See `LICENSE` for details.
-- Commercial licensing is available on a case‑by‑case basis. Open an issue to inquire.
+- MIT License. See `LICENSE` for details.
 
 ## Contributing
 - We use the Developer Certificate of Origin (DCO). Please sign your commits with `-s`.
