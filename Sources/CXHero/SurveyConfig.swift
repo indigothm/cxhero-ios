@@ -1,11 +1,59 @@
 import Foundation
 
+// MARK: - Event Registry
+// These types mirror the `events` array exported by the CXHero web configurator.
+// They are decoded from the same survey.json consumed at runtime and serve as
+// a schema reference — the SDK does not enforce them at runtime.
+
+public struct EventPropertyDef: Codable, Equatable, Sendable {
+    public let name: String
+    public let type: String       // "string" | "number" | "boolean"
+    public let description: String?
+    public let example: String?
+    public let optional: Bool?
+
+    public init(name: String, type: String, description: String? = nil, example: String? = nil, optional: Bool? = nil) {
+        self.name = name
+        self.type = type
+        self.description = description
+        self.example = example
+        self.optional = optional
+    }
+}
+
+public struct EventDef: Codable, Equatable, Sendable {
+    public let name: String
+    public let description: String?
+    public let screen: String?
+    public let properties: [EventPropertyDef]
+
+    public init(name: String, description: String? = nil, screen: String? = nil, properties: [EventPropertyDef] = []) {
+        self.name = name
+        self.description = description
+        self.screen = screen
+        self.properties = properties
+    }
+}
+
+// MARK: - Survey Config
+
 public struct SurveyConfig: Codable, Equatable, Sendable {
+    public let events: [EventDef]
     public let surveys: [SurveyRule]
-    
-    public init(surveys: [SurveyRule]) {
+
+    public init(events: [EventDef] = [], surveys: [SurveyRule]) {
+        self.events = events
         self.surveys = surveys
     }
+
+    // Custom decoding so `events` defaults to [] when absent (backwards-compatible with old configs)
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.events = try container.decodeIfPresent([EventDef].self, forKey: .events) ?? []
+        self.surveys = try container.decode([SurveyRule].self, forKey: .surveys)
+    }
+
+    private enum CodingKeys: String, CodingKey { case events, surveys }
 }
 
 public struct NotificationConfig: Codable, Equatable, Sendable {
