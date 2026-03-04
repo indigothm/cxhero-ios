@@ -4,51 +4,125 @@
   "title": "CXHero Survey Config",
   "type": "object",
   "additionalProperties": false,
-  "required": ["surveys"],
+  "required": [
+    "surveys"
+  ],
   "properties": {
     "surveys": {
       "type": "array",
       "description": "Ordered list of survey rules; the first matching rule is presented.",
-      "items": { "$ref": "#/$defs/surveyRule" }
+      "items": {
+        "$ref": "#/$defs/surveyRule"
+      }
+    },
+    "events": {
+      "type": "array",
+      "description": "Optional registry of events used in trigger conditions. Exported by the web configurator as a schema reference — not enforced at runtime.",
+      "items": {
+        "$ref": "#/$defs/eventDef"
+      }
     }
   },
   "$defs": {
     "surveyRule": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "title", "message", "trigger"],
+      "required": [
+        "id",
+        "title",
+        "message",
+        "trigger"
+      ],
       "anyOf": [
-        { "required": ["response"] },
-        { "required": ["options"] }
+        {
+          "required": [
+            "response"
+          ]
+        },
+        {
+          "required": [
+            "options"
+          ]
+        }
       ],
       "properties": {
-        "id": { "type": "string", "description": "Stable identifier for the survey rule." },
-        "title": { "type": "string", "description": "Survey title." },
-        "message": { "type": "string", "description": "Survey message/body." },
+        "id": {
+          "type": "string",
+          "description": "Stable identifier for the survey rule."
+        },
+        "title": {
+          "type": "string",
+          "description": "Survey title."
+        },
+        "message": {
+          "type": "string",
+          "description": "Survey message/body."
+        },
         "options": {
           "type": "array",
           "minItems": 1,
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "(Legacy) List of button options to present. Prefer using response.type=options."
         },
-        "response": { "$ref": "#/$defs/surveyResponse" },
-        "trigger": { "$ref": "#/$defs/triggerCondition" },
-        "oncePerSession": { "type": "boolean", "default": true, "description": "If true, show at most once per current event session." },
-        "oncePerUser": { "type": "boolean", "default": false, "description": "If true, never show again for the same user across sessions." },
-        "cooldownSeconds": { "type": "number", "minimum": 0, "description": "Minimum seconds between presentations for the same user." },
-        "maxAttempts": { "type": "integer", "minimum": 1, "description": "Maximum number of times to attempt showing this survey before giving up (nil = unlimited)." },
-        "attemptCooldownSeconds": { "type": "number", "minimum": 0, "description": "Cooldown in seconds between re-attempts when survey is dismissed without completion (defaults to cooldownSeconds if not specified)." },
-        "notification": { "$ref": "#/$defs/notificationConfig" }
+        "response": {
+          "$ref": "#/$defs/surveyResponse"
+        },
+        "trigger": {
+          "$ref": "#/$defs/triggerCondition"
+        },
+        "oncePerSession": {
+          "type": "boolean",
+          "default": true,
+          "description": "If true, show at most once per current event session."
+        },
+        "oncePerUser": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, never show again for the same user across sessions."
+        },
+        "cooldownSeconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Minimum seconds between presentations for the same user."
+        },
+        "maxAttempts": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum number of times to attempt showing this survey before giving up (nil = unlimited)."
+        },
+        "attemptCooldownSeconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Cooldown in seconds between re-attempts when survey is dismissed without completion (defaults to cooldownSeconds if not specified)."
+        },
+        "notification": {
+          "$ref": "#/$defs/notificationConfig"
+        }
       }
     },
     "notificationConfig": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["title", "body"],
+      "required": [
+        "title",
+        "body"
+      ],
       "properties": {
-        "title": { "type": "string", "description": "Notification title." },
-        "body": { "type": "string", "description": "Notification body text." },
-        "sound": { "type": "boolean", "default": true, "description": "Whether to play sound with notification." }
+        "title": {
+          "type": "string",
+          "description": "Notification title."
+        },
+        "body": {
+          "type": "string",
+          "description": "Notification body text."
+        },
+        "sound": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to play sound with notification."
+        }
       }
     },
     "surveyResponse": {
@@ -56,13 +130,21 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "options"],
+          "required": [
+            "type",
+            "options"
+          ],
           "properties": {
-            "type": { "const": "options", "description": "Multiple-choice response." },
+            "type": {
+              "const": "options",
+              "description": "Multiple-choice response."
+            },
             "options": {
               "type": "array",
               "minItems": 1,
-              "items": { "type": "string" },
+              "items": {
+                "type": "string"
+              },
               "description": "Choices to render as buttons."
             }
           }
@@ -70,39 +152,94 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type"],
+          "required": [
+            "type"
+          ],
           "properties": {
-            "type": { "const": "text", "description": "Unstructured text response." },
-            "placeholder": { "type": "string", "description": "Placeholder to show when the input is empty." },
-            "submitLabel": { "type": "string", "description": "Label for the submit button." },
-            "allowEmpty": { "type": "boolean", "default": false, "description": "Allow submitting empty/whitespace-only text." },
-            "minLength": { "type": "integer", "minimum": 0, "description": "Minimum number of characters (after trimming)." },
-            "maxLength": { "type": "integer", "minimum": 1, "description": "Maximum number of characters (after trimming)." }
+            "type": {
+              "const": "text",
+              "description": "Unstructured text response."
+            },
+            "placeholder": {
+              "type": "string",
+              "description": "Placeholder to show when the input is empty."
+            },
+            "submitLabel": {
+              "type": "string",
+              "description": "Label for the submit button."
+            },
+            "allowEmpty": {
+              "type": "boolean",
+              "default": false,
+              "description": "Allow submitting empty/whitespace-only text."
+            },
+            "minLength": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Minimum number of characters (after trimming)."
+            },
+            "maxLength": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Maximum number of characters (after trimming)."
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "options"],
+          "required": [
+            "type",
+            "options"
+          ],
           "properties": {
-            "type": { "const": "combined", "description": "Combined response with rating options and optional text field." },
+            "type": {
+              "const": "combined",
+              "description": "Combined response with rating options and optional text field."
+            },
             "options": {
               "type": "array",
               "minItems": 1,
-              "items": { "type": "string" },
+              "items": {
+                "type": "string"
+              },
               "description": "Rating choices to render as selectable buttons."
             },
-            "optionsLabel": { "type": "string", "description": "Optional label above the rating buttons." },
-            "submitLabel": { "type": "string", "description": "Label for the submit button." },
+            "optionsLabel": {
+              "type": "string",
+              "description": "Optional label above the rating buttons."
+            },
+            "submitLabel": {
+              "type": "string",
+              "description": "Label for the submit button."
+            },
             "textField": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "label": { "type": "string", "description": "Label above the text field." },
-                "placeholder": { "type": "string", "description": "Placeholder text for the text field." },
-                "required": { "type": "boolean", "default": false, "description": "Whether the text field must be filled." },
-                "minLength": { "type": "integer", "minimum": 0, "description": "Minimum characters (after trimming)." },
-                "maxLength": { "type": "integer", "minimum": 1, "description": "Maximum characters (after trimming)." }
+                "label": {
+                  "type": "string",
+                  "description": "Label above the text field."
+                },
+                "placeholder": {
+                  "type": "string",
+                  "description": "Placeholder text for the text field."
+                },
+                "required": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Whether the text field must be filled."
+                },
+                "minLength": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Minimum characters (after trimming)."
+                },
+                "maxLength": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Maximum characters (after trimming)."
+                }
               }
             }
           }
@@ -113,83 +250,213 @@
       "type": "object",
       "additionalProperties": false,
       "oneOf": [
-        { "required": ["event"] }
+        {
+          "required": [
+            "event"
+          ]
+        }
       ],
       "properties": {
-        "event": { "$ref": "#/$defs/eventTrigger" }
+        "event": {
+          "$ref": "#/$defs/eventTrigger"
+        }
       }
     },
     "eventTrigger": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name"],
+      "required": [
+        "name"
+      ],
       "properties": {
-        "name": { "type": "string", "description": "Event name to match." },
+        "name": {
+          "type": "string",
+          "description": "Event name to match."
+        },
         "properties": {
           "type": "object",
           "description": "Per-property matchers keyed by property name.",
-          "additionalProperties": { "$ref": "#/$defs/propertyMatcher" }
+          "additionalProperties": {
+            "$ref": "#/$defs/propertyMatcher"
+          }
         },
-        "scheduleAfterSeconds": { "type": "number", "minimum": 0, "description": "Delay in seconds before showing the survey after the event matches (nil or 0 = immediate)." }
+        "scheduleAfterSeconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Delay in seconds before showing the survey after the event matches (nil or 0 = immediate)."
+        }
       }
     },
     "matchAtom": {
       "description": "Primitive value for equality: string, number, or boolean.",
       "oneOf": [
-        { "type": "string" },
-        { "type": "number" },
-        { "type": "boolean" }
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        }
       ]
     },
     "propertyMatcher": {
       "description": "Shorthand equals or operator-based matcher.",
       "oneOf": [
-        { "$ref": "#/$defs/matchAtom" },
+        {
+          "$ref": "#/$defs/matchAtom"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["op", "value"],
+          "required": [
+            "op",
+            "value"
+          ],
           "properties": {
-            "op": { "const": "eq" },
-            "value": { "$ref": "#/$defs/matchAtom" }
+            "op": {
+              "const": "eq"
+            },
+            "value": {
+              "$ref": "#/$defs/matchAtom"
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["op", "value"],
+          "required": [
+            "op",
+            "value"
+          ],
           "properties": {
-            "op": { "const": "ne" },
-            "value": { "$ref": "#/$defs/matchAtom" }
+            "op": {
+              "const": "ne"
+            },
+            "value": {
+              "$ref": "#/$defs/matchAtom"
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["op", "value"],
+          "required": [
+            "op",
+            "value"
+          ],
           "properties": {
-            "op": { "enum": ["gt", "gte", "lt", "lte"] },
-            "value": { "type": "number" }
+            "op": {
+              "enum": [
+                "gt",
+                "gte",
+                "lt",
+                "lte"
+              ]
+            },
+            "value": {
+              "type": "number"
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["op", "value"],
+          "required": [
+            "op",
+            "value"
+          ],
           "properties": {
-            "op": { "enum": ["contains", "notContains"] },
-            "value": { "type": "string" }
+            "op": {
+              "enum": [
+                "contains",
+                "notContains"
+              ]
+            },
+            "value": {
+              "type": "string"
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["op"],
+          "required": [
+            "op"
+          ],
           "properties": {
-            "op": { "enum": ["exists", "notExists"] }
+            "op": {
+              "enum": [
+                "exists",
+                "notExists"
+              ]
+            }
           }
         }
       ]
+    },
+    "eventPropertyDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Property name as passed to EventRecorder.record."
+        },
+        "type": {
+          "enum": [
+            "string",
+            "number",
+            "boolean"
+          ],
+          "description": "Expected value type."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of this property."
+        },
+        "example": {
+          "type": "string",
+          "description": "Example value as a string."
+        },
+        "optional": {
+          "type": "boolean",
+          "description": "Whether this property may be absent on the event."
+        }
+      }
+    },
+    "eventDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Event name passed to EventRecorder.record."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of when this event is fired."
+        },
+        "screen": {
+          "type": "string",
+          "description": "Screen or location in the app where this event originates."
+        },
+        "properties": {
+          "type": "array",
+          "description": "Property definitions for this event.",
+          "items": {
+            "$ref": "#/$defs/eventPropertyDef"
+          }
+        }
+      }
     }
   }
 }

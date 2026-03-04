@@ -28,6 +28,10 @@ Lightweight event tracking for Apple platforms with per-session and optional use
 - Rich trigger operators (eq, ne, gt, gte, lt, lte, contains, notContains, exists)
 - Remote config loading with auto-refresh
 
+## Web Configurator
+
+Use the **[CXHero Web Configurator](https://cx-hero.web.app)** to visually design your survey rules and export a ready-to-use `survey.json`. The tool includes a live iOS preview, event simulation, and schema validation.
+
 ## Storage Layout
 - Base directory: `Documents/CXHero` (override via `EventRecorder(directory:)`)
 - Path: `users/<user-or-anon>/sessions/<session-id>/`
