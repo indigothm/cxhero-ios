@@ -490,7 +490,53 @@ final class SurveyTriggerViewModel: ObservableObject {
         scheduledTasks[rule.ruleId] = task
     }
 
+    /// Presents a survey on demand - a home shortcut, a deep link, a button.
+    ///
+    /// Skips trigger matching, cooldowns and completion gating: the member
+    /// asked for this survey, so there is no prompt to throttle. Response,
+    /// dismissal and presentation analytics record as usual. No-op when the
+    /// id is not in the loaded config.
+    public func presentSurvey(ruleId: String) {
+        guard let rule = config.surveys.first(where: { $0.ruleId == ruleId }) else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            let session = await self.recorder.currentSession()
+            await self.showSurvey(rule: rule, userId: session?.userId)
+        }
+    }
+
     // No async gating init; gating must be ready before subscribing.
+}
+
+/// A handle onto the survey sheet for descendant views.
+///
+/// `SurveyTriggerView` injects one into the environment of its content, so
+/// anything inside - a quick link, a settings row - can open a survey by id
+/// without knowing about the trigger model.
+public struct SurveyPresenter: Sendable {
+    private let present: @MainActor @Sendable (String) -> Void
+
+    public init(present: @MainActor @Sendable @escaping (String) -> Void) {
+        self.present = present
+    }
+
+    @MainActor
+    public func presentSurvey(ruleId: String) {
+        present(ruleId)
+    }
+}
+
+private struct SurveyPresenterKey: EnvironmentKey {
+    static let defaultValue = SurveyPresenter { _ in }
+}
+
+public extension EnvironmentValues {
+    /// Open a survey from inside `SurveyTriggerView` content:
+    /// `surveyPresenter.presentSurvey(ruleId:)`.
+    var surveyPresenter: SurveyPresenter {
+        get { self[SurveyPresenterKey.self] }
+        set { self[SurveyPresenterKey.self] = newValue }
+    }
 }
 
 @available(iOS 14.0, macOS 12.0, tvOS 14.0, watchOS 8.0, *)
@@ -602,6 +648,9 @@ public struct SurveyTriggerView<Content: View>: View {
                     }
                 }
             }
+            .environment(\.surveyPresenter, SurveyPresenter { [weak model] ruleId in
+                model?.presentSurvey(ruleId: ruleId)
+            })
     }
 }
 
