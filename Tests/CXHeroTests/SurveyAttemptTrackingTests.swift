@@ -242,3 +242,15 @@ func recurringDecodes() throws {
     #expect(config.surveys[0].recurring == true)
     #expect(config.surveys[1].recurring == nil)
 }
+
+@Test("Combined optionStyle decodes and round-trips")
+func optionStyleDecodes() throws {
+    let json = #"{"surveys":[{"id":"a","title":"t","message":"m","response":{"type":"combined","options":["1","2","3","4","5"],"optionStyle":"numbers"},"trigger":{"event":{"name":"e"}}},{"id":"b","title":"t","message":"m","response":{"type":"combined","options":["Poor"]},"trigger":{"event":{"name":"e"}}}]}"#
+    let config = try SurveyConfig.from(data: Data(json.utf8))
+    guard case .combined(let numbers) = config.surveys[0].response,
+          case .combined(let plain) = config.surveys[1].response else { Issue.record("expected combined"); return }
+    #expect(numbers.optionStyle == .numbers)
+    #expect(plain.optionStyle == nil)
+    let again = try JSONDecoder().decode(SurveyConfig.self, from: JSONEncoder().encode(config))
+    #expect(again == config)
+}

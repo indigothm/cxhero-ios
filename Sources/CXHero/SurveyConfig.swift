@@ -173,17 +173,28 @@ public struct TextResponseConfig: Codable, Equatable, Sendable {
     }
 }
 
+/// How rating options are drawn.
+public enum RatingOptionStyle: String, Codable, Equatable, Sendable {
+    /// An emoji picked from the label, with the label beneath (default).
+    case emoji
+    /// The label itself, large, with no emoji: for a 1-5 scale.
+    case numbers
+}
+
 public struct CombinedResponseConfig: Codable, Equatable, Sendable {
     public let options: [String]
     public let optionsLabel: String?
     public let textField: TextFieldConfig?
     public let submitLabel: String?
+    /// nil = `.emoji`
+    public let optionStyle: RatingOptionStyle?
     
-    public init(options: [String], optionsLabel: String? = nil, textField: TextFieldConfig? = nil, submitLabel: String? = nil) {
+    public init(options: [String], optionsLabel: String? = nil, textField: TextFieldConfig? = nil, submitLabel: String? = nil, optionStyle: RatingOptionStyle? = nil) {
         self.options = options
         self.optionsLabel = optionsLabel
         self.textField = textField
         self.submitLabel = submitLabel
+        self.optionStyle = optionStyle
     }
 }
 
@@ -206,7 +217,7 @@ public struct TextFieldConfig: Codable, Equatable, Sendable {
 extension SurveyResponse: Codable {
     private enum CodingKeys: String, CodingKey { 
         case type, options, placeholder, submitLabel, allowEmpty, minLength, maxLength
-        case optionsLabel, textField, required, label
+        case optionsLabel, textField, required, label, optionStyle
     }
     private enum ResponseType: String, Codable { case options, text, combined }
 
@@ -230,6 +241,7 @@ extension SurveyResponse: Codable {
             let options = try container.decode([String].self, forKey: .options)
             let optionsLabel = try container.decodeIfPresent(String.self, forKey: .optionsLabel)
             let submitLabel = try container.decodeIfPresent(String.self, forKey: .submitLabel)
+            let optionStyle = try container.decodeIfPresent(RatingOptionStyle.self, forKey: .optionStyle)
             
             // Decode text field if present
             var textField: TextFieldConfig? = nil
@@ -247,7 +259,8 @@ extension SurveyResponse: Codable {
                 options: options,
                 optionsLabel: optionsLabel,
                 textField: textField,
-                submitLabel: submitLabel
+                submitLabel: submitLabel,
+                optionStyle: optionStyle
             )
             self = .combined(config)
         }
@@ -271,6 +284,7 @@ extension SurveyResponse: Codable {
             try container.encode(config.options, forKey: .options)
             try container.encodeIfPresent(config.optionsLabel, forKey: .optionsLabel)
             try container.encodeIfPresent(config.submitLabel, forKey: .submitLabel)
+            try container.encodeIfPresent(config.optionStyle, forKey: .optionStyle)
             
             if let textField = config.textField {
                 var textFieldContainer = container.nestedContainer(keyedBy: CodingKeys.self, forKey: .textField)

@@ -91,7 +91,7 @@ struct SurveySheet: View {
             // Immediate submit on tap.
             RatingRow {
                 ForEach(Array(options.enumerated()), id: \.offset) { _, option in
-                    RatingTile(label: option, accent: accent, selection: .none) {
+                    RatingTile(label: option, style: .emoji, accent: accent, selection: .none) {
                         dismissKeyboard()
                         onSubmitOption(option)
                     }
@@ -108,6 +108,7 @@ struct SurveySheet: View {
                         ForEach(Array(config.options.enumerated()), id: \.offset) { _, option in
                             RatingTile(
                                 label: option,
+                                style: config.optionStyle ?? .emoji,
                                 accent: accent,
                                 selection: selectedOption == nil ? .none
                                     : (selectedOption == option ? .selected : .deselected)
@@ -492,6 +493,7 @@ private struct RatingTile: View {
     enum Selection { case none, selected, deselected }
 
     let label: String
+    let style: RatingOptionStyle
     let accent: Color
     let selection: Selection
     let action: () -> Void
@@ -532,7 +534,22 @@ private struct RatingTile: View {
         RoundedRectangle(cornerRadius: 22, style: .continuous)
     }
 
+    @ViewBuilder
     private func tileLabel(labelColor: Color) -> some View {
+        if style == .numbers {
+            Text(label)
+                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .foregroundColor(labelColor)
+                .scaleEffect(isSelected ? 1.12 : 1)
+                .opacity(selection == .deselected ? 0.7 : 1)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+        } else {
+            emojiLabel(labelColor: labelColor)
+        }
+    }
+
+    private func emojiLabel(labelColor: Color) -> some View {
         VStack(spacing: 8) {
             Text(RatingEmoji.for(label))
                 .font(.system(size: 32))

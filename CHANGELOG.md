@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0] - 2026-09-29
+
+### Added
+- **Liquid Glass survey sheet on iOS 26**: partial-height sheet on the system glass background, interactive glass rating tiles in a `GlassEffectContainer`, glass close button, tinted glass submit button in a bottom safe-area bar. Earlier systems keep the opaque card look.
+- **`recurring`** on `SurveyRule`: gated only by `cooldownSeconds` since last shown; completion and `maxAttempts` never retire it (e.g. at most once a month).
+- **`optionStyle`** on combined responses: `"emoji"` (default) or `"numbers"` to draw a 1-5 scale as numbers.
+- `SurveyPresenter` / `\.surveyPresenter` to open a survey on demand from inside `SurveyTriggerView`.
+
+### Changed
+- Text on the accent colour is black or white by luminance, so a light brand accent stays legible.
+
 ## [Unreleased] - Support for Scheduled Triggers, Attempt Tracking, and Modern UI
 
 ### Added

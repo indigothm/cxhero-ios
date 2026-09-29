@@ -214,6 +214,11 @@
               "type": "string",
               "description": "Optional label above the rating buttons."
             },
+            "optionStyle": {
+              "enum": ["emoji", "numbers"],
+              "default": "emoji",
+              "description": "How rating buttons are drawn: an emoji with the label beneath, or the label itself as a large number (for a 1-5 scale)."
+            },
             "submitLabel": {
               "type": "string",
               "description": "Label for the submit button."
