@@ -82,7 +82,8 @@ public struct SurveyDebugConfig: Sendable {
                     cooldownSeconds: survey.cooldownSeconds,
                     maxAttempts: survey.maxAttempts,
                     attemptCooldownSeconds: modifiedAttemptCooldown,
-                    notification: survey.notification
+                    notification: survey.notification,
+                    recurring: survey.recurring
                 )
             }
             

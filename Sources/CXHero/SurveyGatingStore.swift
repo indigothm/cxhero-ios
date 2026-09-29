@@ -19,11 +19,18 @@ actor SurveyGatingStore {
         var completedOnce: Bool = false
     }
 
-    func canShow(ruleId: String, forUser userId: String?, oncePerUser: Bool?, cooldownSeconds: TimeInterval?, maxAttempts: Int?, attemptCooldownSeconds: TimeInterval?) async -> Bool {
+    func canShow(ruleId: String, forUser userId: String?, oncePerUser: Bool?, cooldownSeconds: TimeInterval?, maxAttempts: Int?, attemptCooldownSeconds: TimeInterval?, recurring: Bool? = nil) async -> Bool {
         let path = gatingURL(for: userId)
         let file = path
         guard let gating = (try? Data(contentsOf: file)).flatMap({ try? decoder.decode(Gating.self, from: $0) }) else {
             // No history -> allow
+            return true
+        }
+        if let rec = gating.rules[ruleId], recurring == true {
+            // Recurring: only the cooldown since it was last shown applies.
+            if let cd = cooldownSeconds, Date() < rec.lastShownAt.addingTimeInterval(cd) {
+                return false
+            }
             return true
         }
         if let rec = gating.rules[ruleId] {

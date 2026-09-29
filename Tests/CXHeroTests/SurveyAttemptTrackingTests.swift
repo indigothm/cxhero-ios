@@ -209,3 +209,36 @@ func firstAttemptIncrementsCounter() async throws {
     #expect(canShow == true)
 }
 
+
+// MARK: - Recurring surveys
+
+private let month: TimeInterval = 2_592_000
+
+@Test("Recurring survey is blocked within its cooldown even after completion")
+func recurringBlockedWithinCooldown() async throws {
+    let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try writeGatingWithAttempts(base: base, userId: "u", ruleId: "r", lastShownISO8601: iso8601Past(seconds: 10 * 86_400), attemptCount: 1, completedOnce: true)
+    let store = SurveyGatingStore(baseDirectory: base)
+    let allowed = await store.canShow(ruleId: "r", forUser: "u", oncePerUser: nil, cooldownSeconds: month, maxAttempts: nil, attemptCooldownSeconds: nil, recurring: true)
+    #expect(allowed == false)
+}
+
+@Test("Recurring survey shows again after its cooldown, completed or not")
+func recurringReturnsAfterCooldown() async throws {
+    let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try writeGatingWithAttempts(base: base, userId: "u", ruleId: "r", lastShownISO8601: iso8601Past(seconds: month + 3_600), attemptCount: 5, completedOnce: true)
+    let store = SurveyGatingStore(baseDirectory: base)
+    let recurring = await store.canShow(ruleId: "r", forUser: "u", oncePerUser: nil, cooldownSeconds: month, maxAttempts: 1, attemptCooldownSeconds: nil, recurring: true)
+    #expect(recurring == true)
+    // The same history retires a non-recurring rule for good.
+    let oneOff = await store.canShow(ruleId: "r", forUser: "u", oncePerUser: nil, cooldownSeconds: month, maxAttempts: 1, attemptCooldownSeconds: nil)
+    #expect(oneOff == false)
+}
+
+@Test("Recurring decodes from JSON and defaults to nil")
+func recurringDecodes() throws {
+    let json = #"{"surveys":[{"id":"a","title":"t","message":"m","options":["x"],"trigger":{"event":{"name":"e"}},"recurring":true},{"id":"b","title":"t","message":"m","options":["x"],"trigger":{"event":{"name":"e"}}}]}"#
+    let config = try SurveyConfig.from(data: Data(json.utf8))
+    #expect(config.surveys[0].recurring == true)
+    #expect(config.surveys[1].recurring == nil)
+}

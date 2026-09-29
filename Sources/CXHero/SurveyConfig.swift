@@ -84,6 +84,9 @@ public struct SurveyRule: Codable, Equatable, Sendable, Identifiable {
     public let attemptCooldownSeconds: TimeInterval?
     /// Local notification configuration for when survey is ready (nil = no notification sent)
     public let notification: NotificationConfig?
+    /// A survey that comes back: completion and `maxAttempts` never retire it,
+    /// only `cooldownSeconds` since it was last shown gates it (nil = false).
+    public let recurring: Bool?
 
     public var options: [String] {
         switch response {
@@ -93,9 +96,9 @@ public struct SurveyRule: Codable, Equatable, Sendable, Identifiable {
         }
     }
 
-    enum CodingKeys: String, CodingKey { case ruleId = "id", title, message, options, trigger, oncePerSession, oncePerUser, cooldownSeconds, response, maxAttempts, attemptCooldownSeconds, notification }
+    enum CodingKeys: String, CodingKey { case ruleId = "id", title, message, options, trigger, oncePerSession, oncePerUser, cooldownSeconds, response, maxAttempts, attemptCooldownSeconds, notification, recurring }
 
-    public init(ruleId: String, title: String, message: String, response: SurveyResponse, trigger: TriggerCondition, oncePerSession: Bool? = nil, oncePerUser: Bool? = nil, cooldownSeconds: TimeInterval? = nil, maxAttempts: Int? = nil, attemptCooldownSeconds: TimeInterval? = nil, notification: NotificationConfig? = nil) {
+    public init(ruleId: String, title: String, message: String, response: SurveyResponse, trigger: TriggerCondition, oncePerSession: Bool? = nil, oncePerUser: Bool? = nil, cooldownSeconds: TimeInterval? = nil, maxAttempts: Int? = nil, attemptCooldownSeconds: TimeInterval? = nil, notification: NotificationConfig? = nil, recurring: Bool? = nil) {
         self.ruleId = ruleId
         self.title = title
         self.message = message
@@ -107,6 +110,7 @@ public struct SurveyRule: Codable, Equatable, Sendable, Identifiable {
         self.maxAttempts = maxAttempts
         self.attemptCooldownSeconds = attemptCooldownSeconds
         self.notification = notification
+        self.recurring = recurring
     }
 
     public init(from decoder: Decoder) throws {
@@ -128,6 +132,7 @@ public struct SurveyRule: Codable, Equatable, Sendable, Identifiable {
         self.maxAttempts = try container.decodeIfPresent(Int.self, forKey: .maxAttempts)
         self.attemptCooldownSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .attemptCooldownSeconds)
         self.notification = try container.decodeIfPresent(NotificationConfig.self, forKey: .notification)
+        self.recurring = try container.decodeIfPresent(Bool.self, forKey: .recurring)
     }
 
     public func encode(to encoder: Encoder) throws {

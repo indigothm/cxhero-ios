@@ -92,6 +92,11 @@
           "minimum": 1,
           "description": "Maximum number of times to attempt showing this survey before giving up (nil = unlimited)."
         },
+        "recurring": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, completion and maxAttempts never retire the survey; it may show again once cooldownSeconds have passed since it was last shown."
+        },
         "attemptCooldownSeconds": {
           "type": "number",
           "minimum": 0,
